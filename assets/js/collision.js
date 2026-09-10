@@ -1,6 +1,6 @@
 /* ==========================================================
    U of T Statistics Graduate Programs
-   Interactive Collision Hero
+   Heavy Collision Hero
    ========================================================== */
 
 (() => {
@@ -8,105 +8,136 @@
 
   const canvas = document.getElementById("collision-canvas");
 
-  if (!canvas) {
-    console.warn("Collision canvas not found.");
+  if (!canvas || typeof d3 === "undefined") {
+    console.warn("Collision canvas or D3 not found.");
     return;
   }
 
-  const context = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d");
 
-  /* ----------------------------------------------------------
-     SETTINGS
-     ---------------------------------------------------------- */
+  /* ==========================================================
+     CONFIGURATION
+     ========================================================== */
 
   const PARTICLE_COUNT = 200;
 
-  // Particle size range
-  const MIN_RADIUS = 4;
+  const MIN_RADIUS = 5;
   const MAX_RADIUS = 16;
 
-  // How tightly particles are packed when first created
-  const INITIAL_CLUSTER_RADIUS = 30;
+  /*
+   * Radius of the assembled cluster.
+   *
+   * This is NOT the starting scatter radius.
+   * We pre-pack the particles before displaying them.
+   */
+  const CLUSTER_RADIUS = 150;
 
-  // Strength of attraction back toward the centre
-  // Higher = faster return
-  const CENTER_FORCE = 0.08;
+  /*
+   * Restoring force.
+   *
+   * Relatively strong, but combined with heavy damping.
+   */
+  const CENTER_STRENGTH = 0.075;
 
-  // Lower values retain more velocity / feel more energetic
-  const VELOCITY_DECAY = 0.08;
+  /*
+   * HIGH velocity decay = heavy / damped.
+   *
+   * D3 velocityDecay works somewhat like friction.
+   */
+  const VELOCITY_DECAY = 0.32;
 
-  // Pointer repulsion strength
-  // Higher = stronger and faster reaction
-  const POINTER_FORCE_MULTIPLIER = 1.5;
+  /*
+   * Mouse interaction radius.
+   */
+  const POINTER_RADIUS = 150;
 
-  // Collision settings
-  const COLLISION_PADDING = 1;
-  const COLLISION_STRENGTH = 1;
-  const COLLISION_ITERATIONS = 4;
+  /*
+   * Direct impulse applied by mouse.
+   *
+   * This is intentionally strong.
+   */
+  const POINTER_FORCE = 8.5;
+
+  /*
+   * Additional force when pointer itself is moving quickly.
+   */
+  const POINTER_VELOCITY_FORCE = 0.10;
+
+  /*
+   * Collision configuration.
+   */
+  const COLLISION_PADDING = 1.5;
+  const COLLISION_ITERATIONS = 6;
+
+  /*
+   * Number of invisible simulation ticks used to build
+   * the cluster BEFORE we show it.
+   */
+  const PRE_TICKS = 300;
 
 
-  /* ----------------------------------------------------------
+  /* ==========================================================
      STATE
-     ---------------------------------------------------------- */
+     ========================================================== */
 
-  let width = 0;
-  let height = 0;
-  let pixelRatio = 1;
+  let width;
+  let height;
+  let dpr;
 
   let nodes = [];
-  let simulation = null;
+  let simulation;
+
+  let pointerX = null;
+  let pointerY = null;
+
+  let previousPointerX = null;
+  let previousPointerY = null;
+
+  let pointerVX = 0;
+  let pointerVY = 0;
 
 
-  /* ----------------------------------------------------------
-     RANDOM HELPERS
-     ---------------------------------------------------------- */
+  /* ==========================================================
+     HELPERS
+     ========================================================== */
 
-  function randomBetween(min, max) {
+  function random(min, max) {
     return min + Math.random() * (max - min);
   }
 
 
-  /* ----------------------------------------------------------
+  /* ==========================================================
      CREATE PARTICLES
-     ---------------------------------------------------------- */
+     ========================================================== */
 
   function createNodes() {
+
     nodes = Array.from(
-      { length: PARTICLE_COUNT + 1 },
-      (_, i) => {
+      { length: PARTICLE_COUNT },
+      () => {
 
         /*
-         * Node 0 is invisible.
+         * Initially place particles in a SMALL area.
          *
-         * It follows the cursor and acts as the repulsive
-         * force used to push the visible particles away.
-         */
-        if (i === 0) {
-          return {
-            r: 0,
-            x: 0,
-            y: 0,
-            vx: 0,
-            vy: 0
-          };
-        }
-
-        /*
-         * Start every visible particle close to the centre.
+         * This state is never drawn.
          *
-         * We deliberately DON'T place every particle at
-         * exactly 0,0 because the collision solver would
-         * initially have 200 overlapping particles to resolve.
+         * The simulation will pack them before the first
+         * visible frame.
          */
 
-        const angle = Math.random() * Math.PI * 2;
+        const angle =
+          Math.random() *
+          Math.PI *
+          2;
 
         const distance =
           Math.sqrt(Math.random()) *
-          INITIAL_CLUSTER_RADIUS;
+          CLUSTER_RADIUS *
+          0.35;
 
         return {
-          r: randomBetween(
+
+          r: random(
             MIN_RADIUS,
             MAX_RADIUS
           ),
@@ -127,76 +158,49 @@
   }
 
 
-  /* ----------------------------------------------------------
-     CREATE D3 FORCE SIMULATION
-     ---------------------------------------------------------- */
+  /* ==========================================================
+     SIMULATION
+     ========================================================== */
 
   function createSimulation() {
-
-    if (simulation) {
-      simulation.stop();
-    }
 
     simulation = d3
       .forceSimulation(nodes)
 
       /*
-       * Keep the simulation alive.
-       *
-       * We want this visualization to remain interactive
-       * indefinitely rather than eventually "cooling down."
+       * Heavy movement.
        */
-
-      .alpha(1)
-      .alphaTarget(0.3)
-      .alphaDecay(0)
-
-      /*
-       * Low friction.
-       *
-       * Lower velocityDecay produces quicker,
-       * more responsive movement.
-       */
-
       .velocityDecay(
         VELOCITY_DECAY
       )
 
       /*
-       * Horizontal attraction toward centre.
+       * Pull everything toward the centre.
        */
-
       .force(
         "x",
         d3
           .forceX(0)
           .strength(
-            CENTER_FORCE
+            CENTER_STRENGTH
           )
       )
-
-      /*
-       * Vertical attraction toward centre.
-       */
 
       .force(
         "y",
         d3
           .forceY(0)
           .strength(
-            CENTER_FORCE
+            CENTER_STRENGTH
           )
       )
 
       /*
-       * Collision detection.
-       *
-       * This prevents visible particles from
-       * occupying the same space.
+       * Hard collision.
        */
-
       .force(
         "collide",
+
         d3
           .forceCollide()
           .radius(
@@ -204,228 +208,385 @@
               d.r +
               COLLISION_PADDING
           )
-          .strength(
-            COLLISION_STRENGTH
-          )
+          .strength(1)
           .iterations(
             COLLISION_ITERATIONS
           )
       )
 
       /*
-       * Pointer repulsion.
-       *
-       * Only node 0 generates charge.
-       * The visible particles themselves do not.
+       * Don't automatically draw yet.
        */
+      .stop();
 
-      .force(
-        "charge",
-        d3
-          .forceManyBody()
-          .strength(
-            (d, i) =>
-              i === 0
-                ? -width *
-                  POINTER_FORCE_MULTIPLIER
-                : 0
-          )
-      )
 
-      .on(
-        "tick",
-        draw
-      );
+    /* ========================================================
+       PRE-CALCULATE THE CLUSTER
+
+       THIS IS THE IMPORTANT CHANGE.
+
+       We run hundreds of simulation ticks before the user
+       sees the canvas.
+
+       Therefore the opening frame is ALREADY assembled.
+       ======================================================== */
+
+    simulation.alpha(1);
+
+    for (
+      let i = 0;
+      i < PRE_TICKS;
+      i++
+    ) {
+
+      simulation.tick();
+    }
+
+
+    /*
+     * Kill residual velocities created during packing.
+     *
+     * Otherwise the cluster can appear to "breathe"
+     * when it first becomes visible.
+     */
+
+    for (const node of nodes) {
+
+      node.vx = 0;
+      node.vy = 0;
+    }
+
+
+    /*
+     * NOW start the visible simulation.
+     */
+
+    simulation
+      .alpha(0.15)
+      .alphaTarget(0)
+      .on("tick", draw)
+      .restart();
+
+    /*
+     * Draw immediately rather than waiting for first tick.
+     */
+
+    draw();
   }
 
 
-  /* ----------------------------------------------------------
+  /* ==========================================================
+     POINTER PHYSICS
+
+     Instead of treating the cursor as a weak electrical
+     charge, we directly push balls inside its influence
+     radius.
+
+     This gives the interaction much more physical weight.
+     ========================================================== */
+
+  function applyPointerForce() {
+
+    if (
+      pointerX === null ||
+      pointerY === null
+    ) {
+      return;
+    }
+
+
+    for (const node of nodes) {
+
+      const dx =
+        node.x -
+        pointerX;
+
+      const dy =
+        node.y -
+        pointerY;
+
+      const distanceSquared =
+        dx * dx +
+        dy * dy;
+
+      const interactionRadius =
+        POINTER_RADIUS +
+        node.r;
+
+      if (
+        distanceSquared <
+        interactionRadius *
+        interactionRadius
+      ) {
+
+        let distance =
+          Math.sqrt(
+            distanceSquared
+          );
+
+
+        /*
+         * Protect against division by zero.
+         */
+
+        if (distance < 0.1) {
+          distance = 0.1;
+        }
+
+
+        /*
+         * Normalized direction AWAY from cursor.
+         */
+
+        const nx =
+          dx / distance;
+
+        const ny =
+          dy / distance;
+
+
+        /*
+         * Strongest close to pointer.
+         *
+         * Drops toward zero at edge of interaction radius.
+         */
+
+        const proximity =
+          1 -
+          distance /
+          interactionRadius;
+
+
+        /*
+         * Squared proximity makes the force feel much more
+         * solid near the cursor rather than like a broad,
+         * weak magnetic field.
+         */
+
+        const impact =
+          proximity *
+          proximity *
+          POINTER_FORCE;
+
+
+        /*
+         * Direct velocity impulse.
+         */
+
+        node.vx +=
+          nx *
+          impact;
+
+        node.vy +=
+          ny *
+          impact;
+
+
+        /*
+         * Transfer some of the cursor's movement into
+         * the particles.
+
+         * This makes sweeping through the cluster feel
+         * like physically striking the balls.
+         */
+
+        node.vx +=
+          pointerVX *
+          proximity *
+          POINTER_VELOCITY_FORCE;
+
+        node.vy +=
+          pointerVY *
+          proximity *
+          POINTER_VELOCITY_FORCE;
+      }
+    }
+  }
+
+
+  /* ==========================================================
      DRAW
-     ---------------------------------------------------------- */
+     ========================================================== */
 
   function draw() {
 
-    context.clearRect(
+    /*
+     * Apply interaction BEFORE rendering.
+     */
+
+    applyPointerForce();
+
+
+    ctx.clearRect(
       0,
       0,
       width,
       height
     );
 
-    context.save();
+
+    ctx.save();
+
 
     /*
-     * D3 coordinates are centred around 0,0.
-     *
-     * Translate the canvas so that 0,0 visually corresponds
-     * to the middle of the viewport.
+     * D3 coordinates use the centre of the canvas
+     * as our origin.
      */
 
-    context.translate(
+    ctx.translate(
       width / 2,
       height / 2
     );
 
-    context.fillStyle =
+
+    ctx.fillStyle =
       "#ffffff";
 
-    /*
-     * Skip node 0 because it is our invisible
-     * pointer-repulsion node.
-     */
 
-    for (
-      let i = 1;
-      i < nodes.length;
-      i++
-    ) {
+    for (const node of nodes) {
 
-      const d = nodes[i];
+      ctx.beginPath();
 
-      context.beginPath();
-
-      context.arc(
-        d.x,
-        d.y,
-        d.r,
+      ctx.arc(
+        node.x,
+        node.y,
+        node.r,
         0,
         Math.PI * 2
       );
 
-      context.fill();
+      ctx.fill();
     }
 
-    context.restore();
+
+    ctx.restore();
   }
 
 
-  /* ----------------------------------------------------------
+  /* ==========================================================
      POINTER MOVEMENT
-     ---------------------------------------------------------- */
+     ========================================================== */
 
   function pointerMoved(event) {
 
     const rect =
       canvas.getBoundingClientRect();
 
-    /*
-     * Convert browser coordinates into our
-     * centre-origin coordinate system.
-     */
 
-    const x =
+    const newX =
       event.clientX -
       rect.left -
       width / 2;
 
-    const y =
+    const newY =
       event.clientY -
       rect.top -
       height / 2;
 
+
     /*
-     * Move invisible repulsion node directly
-     * underneath the pointer.
+     * Calculate cursor velocity.
      */
 
-    nodes[0].fx = x;
-    nodes[0].fy = y;
+    if (
+      previousPointerX !== null &&
+      previousPointerY !== null
+    ) {
+
+      pointerVX =
+        newX -
+        previousPointerX;
+
+      pointerVY =
+        newY -
+        previousPointerY;
+
+    } else {
+
+      pointerVX = 0;
+      pointerVY = 0;
+    }
+
+
+    previousPointerX =
+      newX;
+
+    previousPointerY =
+      newY;
+
+    pointerX =
+      newX;
+
+    pointerY =
+      newY;
+
 
     /*
-     * Immediately energize the simulation.
-     *
-     * This is what removes much of the sluggish
-     * cursor response from the previous version.
+     * Wake simulation immediately.
      */
 
     simulation
-      .alpha(1)
+      .alpha(0.7)
       .restart();
   }
 
 
-  /* ----------------------------------------------------------
-     POINTER LEAVES HERO
-     ---------------------------------------------------------- */
+  /* ==========================================================
+     POINTER LEAVE
+     ========================================================== */
 
   function pointerLeft() {
 
-    /*
-     * Release the invisible node.
-     */
+    pointerX = null;
+    pointerY = null;
 
-    nodes[0].fx = null;
-    nodes[0].fy = null;
+    previousPointerX = null;
+    previousPointerY = null;
 
-    /*
-     * Put it back at the centre.
-     */
+    pointerVX = 0;
+    pointerVY = 0;
 
-    nodes[0].x = 0;
-    nodes[0].y = 0;
-
-    nodes[0].vx = 0;
-    nodes[0].vy = 0;
 
     /*
-     * Re-energize the simulation so particles
-     * return immediately rather than lazily drifting.
+     * Let centre forces pull everything back together.
      */
 
     simulation
-      .alpha(1)
+      .alpha(0.45)
       .restart();
   }
 
 
-  /* ----------------------------------------------------------
-     TOUCH SUPPORT
-     ---------------------------------------------------------- */
+  /* ==========================================================
+     POINTER ENTER
+     ========================================================== */
 
-  function touchMoved(event) {
-
-    if (
-      !event.touches ||
-      !event.touches.length
-    ) {
-      return;
-    }
-
-    event.preventDefault();
-
-    const touch =
-      event.touches[0];
+  function pointerEntered(event) {
 
     const rect =
       canvas.getBoundingClientRect();
 
-    const x =
-      touch.clientX -
+    pointerX =
+      event.clientX -
       rect.left -
       width / 2;
 
-    const y =
-      touch.clientY -
+    pointerY =
+      event.clientY -
       rect.top -
       height / 2;
 
-    nodes[0].fx = x;
-    nodes[0].fy = y;
+    previousPointerX =
+      pointerX;
 
-    simulation
-      .alpha(1)
-      .restart();
+    previousPointerY =
+      pointerY;
   }
 
 
-  function touchEnded() {
-    pointerLeft();
-  }
-
-
-  /* ----------------------------------------------------------
-     RESPONSIVE CANVAS
-     ---------------------------------------------------------- */
+  /* ==========================================================
+     CANVAS SIZE
+     ========================================================== */
 
   function resizeCanvas() {
 
@@ -440,26 +601,24 @@
       rect.height ||
       window.innerHeight;
 
-    /*
-     * Limit pixel ratio to avoid unnecessarily expensive
-     * canvas rendering on very high-DPI displays.
-     */
 
-    pixelRatio =
+    dpr =
       Math.min(
         window.devicePixelRatio || 1,
         2
       );
 
+
     canvas.width =
       Math.round(
-        width * pixelRatio
+        width * dpr
       );
 
     canvas.height =
       Math.round(
-        height * pixelRatio
+        height * dpr
       );
+
 
     canvas.style.width =
       `${width}px`;
@@ -467,50 +626,24 @@
     canvas.style.height =
       `${height}px`;
 
-    /*
-     * Allow drawing code to continue using
-     * normal CSS pixel coordinates.
-     */
 
-    context.setTransform(
-      pixelRatio,
+    ctx.setTransform(
+      dpr,
       0,
       0,
-      pixelRatio,
+      dpr,
       0,
       0
     );
 
-    /*
-     * Update pointer force because it scales
-     * relative to viewport width.
-     */
 
-    if (simulation) {
-
-      simulation.force(
-        "charge",
-        d3
-          .forceManyBody()
-          .strength(
-            (d, i) =>
-              i === 0
-                ? -width *
-                  POINTER_FORCE_MULTIPLIER
-                : 0
-          )
-      );
-
-      simulation
-        .alpha(1)
-        .restart();
-    }
+    draw();
   }
 
 
-  /* ----------------------------------------------------------
-     INITIAL SETUP
-     ---------------------------------------------------------- */
+  /* ==========================================================
+     INITIALIZE
+     ========================================================== */
 
   function init() {
 
@@ -520,9 +653,12 @@
 
     createSimulation();
 
-    /*
-     * Pointer interaction
-     */
+
+    canvas.addEventListener(
+      "pointerenter",
+      pointerEntered
+    );
+
 
     canvas.addEventListener(
       "pointermove",
@@ -532,31 +668,12 @@
       }
     );
 
+
     canvas.addEventListener(
       "pointerleave",
       pointerLeft
     );
 
-    /*
-     * Touch interaction
-     */
-
-    canvas.addEventListener(
-      "touchmove",
-      touchMoved,
-      {
-        passive: false
-      }
-    );
-
-    canvas.addEventListener(
-      "touchend",
-      touchEnded
-    );
-
-    /*
-     * Responsive resizing
-     */
 
     window.addEventListener(
       "resize",
@@ -565,9 +682,9 @@
   }
 
 
-  /* ----------------------------------------------------------
+  /* ==========================================================
      START
-     ---------------------------------------------------------- */
+     ========================================================== */
 
   if (
     document.readyState ===
@@ -582,7 +699,6 @@
   } else {
 
     init();
-
   }
 
 })();
