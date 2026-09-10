@@ -2,19 +2,20 @@
    U of T Statistics Graduate Programs
    Collision Hero
 
-   Direct adaptation of:
-   Observable / D3 Collision Detection
+   Based directly on:
+   D3 / Observable Collision Detection
    https://observablehq.com/@d3/collision-detection/2
 
    Responsive node counts:
-   - Desktop: 400
-   - Tablet:  200
-   - Mobile:  100
+   - Mobile <= 800px:       100
+   - Tablet 801–1200px:     200
+   - Desktop > 1200px:      400
 
    Changes from Observable:
-   - Full-screen responsive canvas
-   - All visible nodes are white
-   - Responsive number of nodes
+   - Responsive full-screen canvas
+   - White nodes
+   - Responsive node counts
+   - Stronger collision solving to prevent visible overlap
    ========================================================== */
 
 (() => {
@@ -53,31 +54,64 @@
   let nodes = [];
   let simulation = null;
 
+  let currentParticleCount = 0;
+
 
   /* ==========================================================
      RESPONSIVE PARTICLE COUNT
-
-     Mobile:
-     100 particles
-
-     Tablet:
-     200 particles
-
-     Desktop:
-     400 particles
      ========================================================== */
 
   function getParticleCount() {
 
-    if (width <= 600) {
+    /*
+     * Match the website's CSS mobile breakpoint.
+     */
+
+    if (width <= 800) {
       return 100;
     }
 
-    if (width <= 1024) {
+    /*
+     * Tablet / smaller laptop.
+     */
+
+    if (width <= 1200) {
       return 200;
     }
 
+    /*
+     * Desktop.
+     */
+
     return 400;
+  }
+
+
+  /* ==========================================================
+     PARTICLE SIZE
+     ========================================================== */
+
+  function getParticleScale() {
+
+    /*
+     * Observable's original chart is square and uses:
+     *
+     * const k = width / 200;
+     *
+     * Our hero is usually much wider than it is tall.
+     *
+     * Using the smaller dimension preserves approximately
+     * the same visual scale without creating huge circles
+     * on widescreen monitors.
+     */
+
+    const referenceSize =
+      Math.min(
+        width,
+        height
+      );
+
+    return referenceSize / 200;
   }
 
 
@@ -87,31 +121,19 @@
 
   function createData() {
 
-    /*
-     * Observable uses:
-     *
-     * const k = width / 200;
-     *
-     * Our canvas is rectangular rather than square,
-     * so use the smaller dimension to prevent particles
-     * becoming excessively large on wide desktop screens.
-     */
+    const particleCount =
+      getParticleCount();
 
-    const referenceSize =
-      Math.min(
-        width,
-        height
-      );
+    currentParticleCount =
+      particleCount;
 
 
     const k =
-      referenceSize / 200;
+      getParticleScale();
 
 
     /*
-     * Same radius distribution as the Observable example:
-     *
-     * k → k * 4
+     * Same radius distribution as Observable.
      */
 
     const radius =
@@ -122,14 +144,6 @@
 
 
     const groups = 4;
-
-
-    /*
-     * Determine responsive particle count.
-     */
-
-    const particleCount =
-      getParticleCount();
 
 
     return Array.from(
@@ -176,10 +190,7 @@
 
 
     /*
-     * Cap device pixel ratio at 2.
-     *
-     * This keeps the canvas sharp without unnecessarily
-     * increasing rendering cost on very high-DPI displays.
+     * Limit DPR for performance.
      */
 
     dpr =
@@ -218,7 +229,7 @@
 
 
     /* --------------------------------------------------------
-       High-DPI scaling
+       Retina / HiDPI scaling
        -------------------------------------------------------- */
 
     context.setTransform(
@@ -233,14 +244,10 @@
 
 
   /* ==========================================================
-     DRAW / SIMULATION TICK
+     DRAW
      ========================================================== */
 
   function ticked() {
-
-    /*
-     * Clear previous frame.
-     */
 
     context.clearRect(
       0,
@@ -254,9 +261,8 @@
 
 
     /*
-     * Match Observable's coordinate system.
-     *
-     * D3's simulation is centred around 0,0.
+     * Same coordinate system as Observable:
+     * simulation origin is the middle of the canvas.
      */
 
     context.translate(
@@ -266,12 +272,10 @@
 
 
     /*
-     * IMPORTANT:
+     * Start at node 1.
      *
-     * Begin at node 1.
-     *
-     * Node 0 is invisible because it acts as the
-     * charged node attached to the cursor.
+     * Node 0 is invisible and acts as the charged
+     * pointer-repulsion node.
      */
 
     for (
@@ -303,10 +307,7 @@
 
 
       /*
-       * Observable uses Tableau colours.
-       *
-       * U of T version:
-       * all visible particles are white.
+       * All visible nodes are white.
        */
 
       context.fillStyle =
@@ -322,17 +323,14 @@
 
 
   /* ==========================================================
-     POINTER MOVEMENT
-
-     This deliberately matches the Observable example.
-
-     Node 0 follows the cursor.
-
-     Its strong negative charge pushes the visible nodes
-     away through D3's forceManyBody().
+     POINTER
      ========================================================== */
 
   function pointermoved(event) {
+
+    /*
+     * Match Observable's pointer behaviour.
+     */
 
     const [x, y] =
       d3.pointer(
@@ -340,6 +338,10 @@
         canvas
       );
 
+
+    /*
+     * Node 0 follows the pointer.
+     */
 
     nodes[0].fx =
       x -
@@ -353,13 +355,13 @@
 
 
   /* ==========================================================
-     CREATE SIMULATION
+     SIMULATION
      ========================================================== */
 
   function createSimulation() {
 
     /*
-     * Stop an existing simulation before rebuilding.
+     * Stop previous simulation.
      */
 
     if (simulation) {
@@ -368,7 +370,7 @@
 
 
     /*
-     * Generate fresh responsive data.
+     * Create responsive node set.
      */
 
     nodes =
@@ -377,11 +379,7 @@
 
 
     /* ========================================================
-       OBSERVABLE PHYSICS
-
-       These values are intentionally preserved from:
-
-       https://observablehq.com/@d3/collision-detection/2
+       D3 / OBSERVABLE PHYSICS
        ======================================================== */
 
     simulation =
@@ -392,6 +390,8 @@
 
         /* ----------------------------------------------------
            Keep simulation hot
+
+           Same as Observable.
            ---------------------------------------------------- */
 
         .alphaTarget(
@@ -401,6 +401,8 @@
 
         /* ----------------------------------------------------
            Low friction
+
+           Same as Observable.
            ---------------------------------------------------- */
 
         .velocityDecay(
@@ -409,7 +411,9 @@
 
 
         /* ----------------------------------------------------
-           Horizontal centering
+           X centering
+
+           Same as Observable.
            ---------------------------------------------------- */
 
         .force(
@@ -424,7 +428,9 @@
 
 
         /* ----------------------------------------------------
-           Vertical centering
+           Y centering
+
+           Same as Observable.
            ---------------------------------------------------- */
 
         .force(
@@ -439,7 +445,25 @@
 
 
         /* ----------------------------------------------------
-           Collision detection
+           COLLISION
+
+           Observable uses:
+
+           radius(d => d.r + 1)
+           iterations(3)
+
+           We're making two small changes:
+
+           1. r + 2
+              Gives the visible circles a tiny physical
+              buffer around their outer circumference.
+
+           2. iterations(8)
+              Resolves collisions more aggressively.
+
+           This is especially important with 400 desktop
+           nodes, where three iterations can allow visible
+           penetration during rapid movement.
            ---------------------------------------------------- */
 
         .force(
@@ -450,24 +474,29 @@
 
             .radius(
               d =>
-                d.r + 1
+                d.r + 2
+            )
+
+            .strength(
+              1
             )
 
             .iterations(
-              3
+              8
             )
         )
 
 
         /* ----------------------------------------------------
-           Pointer repulsion
+           POINTER REPULSION
 
-           Node 0 receives a strong negative charge.
+           Same model as Observable.
 
-           Every other node has zero charge.
+           Node 0:
+           strong negative charge.
 
-           This is exactly how the Observable example
-           creates its cursor interaction.
+           Every visible node:
+           zero charge.
            ---------------------------------------------------- */
 
         .force(
@@ -486,32 +515,61 @@
 
 
         /* ----------------------------------------------------
-           Render
+           DRAW
            ---------------------------------------------------- */
 
         .on(
           "tick",
           ticked
         );
+
+
+    /*
+     * Helpful while we're developing.
+     *
+     * Open the browser console and you'll see exactly
+     * which responsive node count is being used.
+     */
+
+    console.log(
+      `Collision hero: ${currentParticleCount} nodes at ${Math.round(width)}px viewport width`
+    );
   }
 
 
   /* ==========================================================
-     RESIZE
-
-     Rebuild the simulation when crossing viewport sizes.
-
-     This also recalculates:
-     - particle count
-     - particle radius
-     - pointer charge
+     RESPONSIVE RESIZE
      ========================================================== */
+
+  let resizeTimer = null;
+
 
   function resized() {
 
-    resizeCanvas();
+    /*
+     * Debounce resize events.
+     *
+     * Without this, dragging the browser window can rebuild
+     * the entire 400-node simulation dozens of times per
+     * second.
+     */
 
-    createSimulation();
+    clearTimeout(
+      resizeTimer
+    );
+
+
+    resizeTimer =
+      setTimeout(
+        () => {
+
+          resizeCanvas();
+
+          createSimulation();
+
+        },
+        120
+      );
   }
 
 
@@ -522,21 +580,21 @@
   function init() {
 
     /*
-     * Size canvas first.
+     * Determine actual canvas dimensions.
      */
 
     resizeCanvas();
 
 
     /*
-     * Create simulation.
+     * Create the appropriate responsive simulation.
      */
 
     createSimulation();
 
 
     /* --------------------------------------------------------
-       Pointer interaction
+       POINTER / TOUCH
        -------------------------------------------------------- */
 
     d3
@@ -556,7 +614,7 @@
 
 
     /* --------------------------------------------------------
-       Responsive resize
+       RESIZE
        -------------------------------------------------------- */
 
     window.addEventListener(
