@@ -153,103 +153,116 @@
      LOAD DATA
      ========================================================== */
 
-  async function loadData() {
+async function loadData() {
 
-    const [
-      worldData,
-      alumniData
-    ] =
-      await Promise.all([
+  /* ========================================================
+     WORLD DATA — REQUIRED
+     ======================================================== */
 
-        fetch(
-          "assets/data/land-110m.json"
-        )
-          .then(
-            response => {
+  const worldResponse =
+    await fetch(
+      "assets/data/land-110m.json"
+    );
 
-              if (!response.ok) {
-                throw new Error(
-                  "Unable to load land-110m.json"
-                );
-              }
+  if (!worldResponse.ok) {
 
-              return response.json();
-            }
-          ),
+    throw new Error(
+      "Unable to load assets/data/land-110m.json"
+    );
 
-
-        fetch(
-          "assets/data/alumni-cities.json"
-        )
-          .then(
-            response => {
-
-              if (!response.ok) {
-                throw new Error(
-                  "Unable to load alumni-cities.json"
-                );
-              }
-
-              return response.json();
-            }
-          )
-
-      ]);
-
-
-    /* --------------------------------------------------------
-       Convert TopoJSON to GeoJSON
-       -------------------------------------------------------- */
-
-    land =
-      topojson.feature(
-        worldData,
-        worldData.objects.land
-      );
-
-
-    /* --------------------------------------------------------
-       Validate alumni coordinates
-       -------------------------------------------------------- */
-
-    alumni =
-      alumniData.filter(
-        d =>
-          Number.isFinite(
-            Number(d.longitude)
-          ) &&
-          Number.isFinite(
-            Number(d.latitude)
-          )
-      );
-
-
-    /*
-     * Ensure numeric values are actually numbers.
-     */
-
-    alumni =
-      alumni.map(
-        d => ({
-
-          ...d,
-
-          longitude:
-            Number(d.longitude),
-
-          latitude:
-            Number(d.latitude),
-
-          count:
-            Number(d.count) || 0
-
-        })
-      );
-
-
-    updateStats();
   }
 
+  const worldData =
+    await worldResponse.json();
+
+
+  land =
+    topojson.feature(
+      worldData,
+      worldData.objects.land
+    );
+
+
+  /* ========================================================
+     ALUMNI DATA — OPTIONAL
+
+     The globe should still render even if alumni-cities.json
+     has not been created yet.
+     ======================================================== */
+
+  try {
+
+    const alumniResponse =
+      await fetch(
+        "assets/data/alumni-cities.json"
+      );
+
+
+    if (!alumniResponse.ok) {
+
+      throw new Error(
+        "alumni-cities.json not found"
+      );
+
+    }
+
+
+    const alumniData =
+      await alumniResponse.json();
+
+
+    alumni =
+      alumniData
+
+        .filter(
+          d =>
+            Number.isFinite(
+              Number(d.longitude)
+            ) &&
+            Number.isFinite(
+              Number(d.latitude)
+            )
+        )
+
+        .map(
+          d => ({
+
+            ...d,
+
+            longitude:
+              Number(d.longitude),
+
+            latitude:
+              Number(d.latitude),
+
+            count:
+              Number(d.count) || 0
+
+          })
+        );
+
+
+  } catch (error) {
+
+    /*
+     * IMPORTANT:
+     *
+     * Missing alumni data should NOT prevent the
+     * globe itself from appearing.
+     */
+
+    console.warn(
+      "Alumni city data is not available yet. Rendering globe without alumni connections.",
+      error
+    );
+
+    alumni = [];
+
+  }
+
+
+  updateStats();
+}
 
   /* ==========================================================
      ALUMNI STATS
