@@ -1,19 +1,39 @@
 /* ==========================================================
    U of T Statistics Graduate Programs
-   Heavy Collision Hero
+   Interactive Collision Hero
+
+   Behaviour:
+   - Particles begin already packed in the centre
+   - No visible "gathering" animation on page load
+   - Particles feel heavy rather than floaty
+   - Pointer has a strong, immediate physical impact
+   - Fast pointer movement transfers momentum to particles
+   - Particles return quickly to the central mass
+   - Collision keeps particles from overlapping
    ========================================================== */
 
 (() => {
   "use strict";
 
+
+  /* ==========================================================
+     CANVAS
+     ========================================================== */
+
   const canvas = document.getElementById("collision-canvas");
 
-  if (!canvas || typeof d3 === "undefined") {
-    console.warn("Collision canvas or D3 not found.");
+  if (!canvas) {
+    console.warn("Collision canvas not found.");
+    return;
+  }
+
+  if (typeof d3 === "undefined") {
+    console.warn("D3 is not loaded.");
     return;
   }
 
   const ctx = canvas.getContext("2d");
+
 
   /* ==========================================================
      CONFIGURATION
@@ -21,71 +41,103 @@
 
   const PARTICLE_COUNT = 200;
 
+  /*
+   * Particle sizes.
+   */
   const MIN_RADIUS = 5;
   const MAX_RADIUS = 16;
 
+
   /*
-   * Radius of the assembled cluster.
+   * INITIAL PACKING
    *
-   * This is NOT the starting scatter radius.
-   * We pre-pack the particles before displaying them.
-   */
-  const CLUSTER_RADIUS = 150;
-
-  /*
-   * Restoring force.
+   * The particles are positioned geometrically before
+   * anything is displayed.
    *
-   * Relatively strong, but combined with heavy damping.
+   * This controls the spacing of that initial cluster.
    */
-  const CENTER_STRENGTH = 0.075;
+  const INITIAL_SPACING = 2;
+
 
   /*
-   * HIGH velocity decay = heavy / damped.
+   * CENTRE FORCE
    *
-   * D3 velocityDecay works somewhat like friction.
-   */
-  const VELOCITY_DECAY = 0.32;
-
-  /*
-   * Mouse interaction radius.
-   */
-  const POINTER_RADIUS = 150;
-
-  /*
-   * Direct impulse applied by mouse.
+   * This does NOT build the initial cluster.
    *
-   * This is intentionally strong.
+   * Its job is to restore particles after the mouse
+   * knocks them out of position.
+   *
+   * Higher = faster return.
    */
-  const POINTER_FORCE = 8.5;
+  const CENTER_STRENGTH = 0.12;
+
 
   /*
-   * Additional force when pointer itself is moving quickly.
+   * WEIGHT / DAMPING
+   *
+   * Higher velocityDecay makes the balls feel heavier
+   * and less like floating bubbles.
    */
-  const POINTER_VELOCITY_FORCE = 0.10;
+  const VELOCITY_DECAY = 0.38;
+
 
   /*
-   * Collision configuration.
+   * POINTER INFLUENCE AREA
+   *
+   * Balls inside this radius are physically pushed
+   * by the mouse.
+   */
+  const POINTER_RADIUS = 200;
+
+
+  /*
+   * POINTER FORCE
+   *
+   * Higher = stronger displacement.
+   *
+   * This is intentionally quite strong.
+   */
+  const POINTER_FORCE = 11;
+
+
+  /*
+   * POINTER MOMENTUM TRANSFER
+   *
+   * When the mouse moves quickly, some of that velocity
+   * is transferred into the balls.
+   */
+  const POINTER_VELOCITY_FORCE = 0.16;
+
+
+  /*
+   * COLLISION
    */
   const COLLISION_PADDING = 1.5;
-  const COLLISION_ITERATIONS = 6;
+  const COLLISION_STRENGTH = 1;
+  const COLLISION_ITERATIONS = 8;
+
 
   /*
-   * Number of invisible simulation ticks used to build
-   * the cluster BEFORE we show it.
+   * INVISIBLE STARTUP TICKS
+   *
+   * Because particles already begin in a geometric cluster,
+   * D3 only needs a few ticks to resolve minor overlaps.
+   *
+   * None of these frames are shown to the visitor.
    */
-  const PRE_TICKS = 300;
+  const INITIAL_SETTLE_TICKS = 50;
 
 
   /* ==========================================================
      STATE
      ========================================================== */
 
-  let width;
-  let height;
-  let dpr;
+  let width = 0;
+  let height = 0;
+  let dpr = 1;
 
   let nodes = [];
-  let simulation;
+  let simulation = null;
 
   let pointerX = null;
   let pointerY = null;
@@ -95,6 +147,8 @@
 
   let pointerVX = 0;
   let pointerVY = 0;
+
+  let pointerActive = false;
 
 
   /* ==========================================================
@@ -107,78 +161,101 @@
 
 
   /* ==========================================================
-     CREATE PARTICLES
+     CREATE INITIAL PACKED CLUSTER
      ========================================================== */
 
   function createNodes() {
 
-    nodes = Array.from(
-      { length: PARTICLE_COUNT },
-      () => {
+    nodes = [];
 
-        /*
-         * Initially place particles in a SMALL area.
-         *
-         * This state is never drawn.
-         *
-         * The simulation will pack them before the first
-         * visible frame.
-         */
+    /*
+     * GOLDEN ANGLE
+     *
+     * This distributes points evenly around a spiral.
+     *
+     * Most importantly, it means the particles are already
+     * located in the centre before the first frame.
+     */
 
-        const angle =
-          Math.random() *
-          Math.PI *
-          2;
+    const goldenAngle =
+      Math.PI * (3 - Math.sqrt(5));
 
-        const distance =
-          Math.sqrt(Math.random()) *
-          CLUSTER_RADIUS *
-          0.35;
 
-        return {
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
 
-          r: random(
-            MIN_RADIUS,
-            MAX_RADIUS
-          ),
+      const particleRadius =
+        random(
+          MIN_RADIUS,
+          MAX_RADIUS
+        );
 
-          x:
-            Math.cos(angle) *
-            distance,
 
-          y:
-            Math.sin(angle) *
-            distance,
+      /*
+       * sqrt(i) keeps the density approximately even
+       * as the spiral grows outward.
+       */
 
-          vx: 0,
-          vy: 0
-        };
-      }
-    );
+      const distance =
+        INITIAL_SPACING *
+        Math.sqrt(i);
+
+
+      const angle =
+        i * goldenAngle;
+
+
+      nodes.push({
+
+        r: particleRadius,
+
+        x:
+          Math.cos(angle) *
+          distance,
+
+        y:
+          Math.sin(angle) *
+          distance,
+
+        vx: 0,
+
+        vy: 0
+
+      });
+    }
   }
 
 
   /* ==========================================================
-     SIMULATION
+     CREATE SIMULATION
      ========================================================== */
 
   function createSimulation() {
 
+    if (simulation) {
+      simulation.stop();
+    }
+
+
     simulation = d3
       .forceSimulation(nodes)
 
-      /*
-       * Heavy movement.
-       */
+
+      /* ------------------------------------------------------
+         HEAVY MOTION
+         ------------------------------------------------------ */
+
       .velocityDecay(
         VELOCITY_DECAY
       )
 
-      /*
-       * Pull everything toward the centre.
-       */
+
+      /* ------------------------------------------------------
+         RETURN TO CENTRE — X
+         ------------------------------------------------------ */
+
       .force(
         "x",
+
         d3
           .forceX(0)
           .strength(
@@ -186,8 +263,14 @@
           )
       )
 
+
+      /* ------------------------------------------------------
+         RETURN TO CENTRE — Y
+         ------------------------------------------------------ */
+
       .force(
         "y",
+
         d3
           .forceY(0)
           .strength(
@@ -195,47 +278,51 @@
           )
       )
 
-      /*
-       * Hard collision.
-       */
+
+      /* ------------------------------------------------------
+         HARD COLLISION
+         ------------------------------------------------------ */
+
       .force(
         "collide",
 
         d3
           .forceCollide()
+
           .radius(
             d =>
               d.r +
               COLLISION_PADDING
           )
-          .strength(1)
+
+          .strength(
+            COLLISION_STRENGTH
+          )
+
           .iterations(
             COLLISION_ITERATIONS
           )
       )
 
+
       /*
-       * Don't automatically draw yet.
+       * Stop automatic animation while we prepare
+       * the opening arrangement.
        */
+
       .stop();
 
 
     /* ========================================================
-       PRE-CALCULATE THE CLUSTER
-
-       THIS IS THE IMPORTANT CHANGE.
-
-       We run hundreds of simulation ticks before the user
-       sees the canvas.
-
-       Therefore the opening frame is ALREADY assembled.
+       INVISIBLE INITIAL SETTLE
        ======================================================== */
 
-    simulation.alpha(1);
+    simulation.alpha(0.7);
+
 
     for (
       let i = 0;
-      i < PRE_TICKS;
+      i < INITIAL_SETTLE_TICKS;
       i++
     ) {
 
@@ -244,58 +331,66 @@
 
 
     /*
-     * Kill residual velocities created during packing.
-     *
-     * Otherwise the cluster can appear to "breathe"
-     * when it first becomes visible.
+     * Remove any momentum generated by those
+     * invisible collision ticks.
      */
 
     for (const node of nodes) {
 
       node.vx = 0;
       node.vy = 0;
+
     }
 
 
-    /*
-     * NOW start the visible simulation.
-     */
-
-    simulation
-      .alpha(0.15)
-      .alphaTarget(0)
-      .on("tick", draw)
-      .restart();
-
-    /*
-     * Draw immediately rather than waiting for first tick.
-     */
+    /* ========================================================
+       FIRST VISIBLE FRAME
+       ======================================================== */
 
     draw();
+
+
+    /* ========================================================
+       START LIVE PHYSICS
+       ======================================================== */
+
+    simulation
+
+      .alpha(0.03)
+
+      .alphaTarget(0)
+
+      .on(
+        "tick",
+        draw
+      )
+
+      .restart();
   }
 
 
   /* ==========================================================
-     POINTER PHYSICS
-
-     Instead of treating the cursor as a weak electrical
-     charge, we directly push balls inside its influence
-     radius.
-
-     This gives the interaction much more physical weight.
+     POINTER FORCE
      ========================================================== */
 
   function applyPointerForce() {
 
     if (
+      !pointerActive ||
       pointerX === null ||
       pointerY === null
     ) {
+
       return;
     }
 
 
     for (const node of nodes) {
+
+
+      /* ------------------------------------------------------
+         DISTANCE FROM POINTER
+         ------------------------------------------------------ */
 
       const dx =
         node.x -
@@ -305,19 +400,28 @@
         node.y -
         pointerY;
 
+
       const distanceSquared =
         dx * dx +
         dy * dy;
 
+
+      /*
+       * Include the particle's own radius so larger
+       * balls begin reacting slightly sooner.
+       */
+
       const interactionRadius =
         POINTER_RADIUS +
         node.r;
+
 
       if (
         distanceSquared <
         interactionRadius *
         interactionRadius
       ) {
+
 
         let distance =
           Math.sqrt(
@@ -326,17 +430,20 @@
 
 
         /*
-         * Protect against division by zero.
+         * Prevent divide-by-zero if the pointer lands
+         * directly on the centre of a particle.
          */
 
         if (distance < 0.1) {
+
           distance = 0.1;
+
         }
 
 
-        /*
-         * Normalized direction AWAY from cursor.
-         */
+        /* ----------------------------------------------------
+           NORMALIZED DIRECTION AWAY FROM POINTER
+           ---------------------------------------------------- */
 
         const nx =
           dx / distance;
@@ -345,23 +452,34 @@
           dy / distance;
 
 
-        /*
-         * Strongest close to pointer.
-         *
-         * Drops toward zero at edge of interaction radius.
-         */
+        /* ----------------------------------------------------
+           PROXIMITY
+
+           1 = directly beside cursor
+           0 = edge of interaction radius
+           ---------------------------------------------------- */
 
         const proximity =
-          1 -
-          distance /
-          interactionRadius;
+          Math.max(
+            0,
+            1 -
+            distance /
+            interactionRadius
+          );
 
 
-        /*
-         * Squared proximity makes the force feel much more
-         * solid near the cursor rather than like a broad,
-         * weak magnetic field.
-         */
+        /* ----------------------------------------------------
+           IMPACT
+
+           Squaring proximity means:
+
+           - Very strong close to cursor
+           - Rapid falloff farther away
+
+           This makes the mouse feel like a physical object
+           moving through the balls rather than a weak
+           magnetic field.
+           ---------------------------------------------------- */
 
         const impact =
           proximity *
@@ -369,9 +487,9 @@
           POINTER_FORCE;
 
 
-        /*
-         * Direct velocity impulse.
-         */
+        /* ----------------------------------------------------
+           DIRECT PHYSICAL IMPULSE
+           ---------------------------------------------------- */
 
         node.vx +=
           nx *
@@ -382,13 +500,12 @@
           impact;
 
 
-        /*
-         * Transfer some of the cursor's movement into
-         * the particles.
+        /* ----------------------------------------------------
+           TRANSFER MOUSE MOMENTUM
 
-         * This makes sweeping through the cluster feel
-         * like physically striking the balls.
-         */
+           A quick mouse sweep therefore hits harder than
+           slowly hovering in the same place.
+           ---------------------------------------------------- */
 
         node.vx +=
           pointerVX *
@@ -399,6 +516,7 @@
           pointerVY *
           proximity *
           POINTER_VELOCITY_FORCE;
+
       }
     }
   }
@@ -410,12 +528,17 @@
 
   function draw() {
 
-    /*
-     * Apply interaction BEFORE rendering.
-     */
+
+    /* --------------------------------------------------------
+       APPLY POINTER PHYSICS
+       -------------------------------------------------------- */
 
     applyPointerForce();
 
+
+    /* --------------------------------------------------------
+       CLEAR
+       -------------------------------------------------------- */
 
     ctx.clearRect(
       0,
@@ -428,16 +551,19 @@
     ctx.save();
 
 
-    /*
-     * D3 coordinates use the centre of the canvas
-     * as our origin.
-     */
+    /* --------------------------------------------------------
+       MOVE ORIGIN TO CENTRE OF SCREEN
+       -------------------------------------------------------- */
 
     ctx.translate(
       width / 2,
       height / 2
     );
 
+
+    /* --------------------------------------------------------
+       WHITE PARTICLES
+       -------------------------------------------------------- */
 
     ctx.fillStyle =
       "#ffffff";
@@ -447,6 +573,7 @@
 
       ctx.beginPath();
 
+
       ctx.arc(
         node.x,
         node.y,
@@ -455,7 +582,9 @@
         Math.PI * 2
       );
 
+
       ctx.fill();
+
     }
 
 
@@ -464,7 +593,52 @@
 
 
   /* ==========================================================
-     POINTER MOVEMENT
+     POINTER ENTER
+     ========================================================== */
+
+  function pointerEntered(event) {
+
+    const rect =
+      canvas.getBoundingClientRect();
+
+
+    pointerX =
+      event.clientX -
+      rect.left -
+      width / 2;
+
+
+    pointerY =
+      event.clientY -
+      rect.top -
+      height / 2;
+
+
+    previousPointerX =
+      pointerX;
+
+    previousPointerY =
+      pointerY;
+
+
+    pointerVX = 0;
+    pointerVY = 0;
+
+    pointerActive = true;
+
+
+    /*
+     * Wake the simulation immediately.
+     */
+
+    simulation
+      .alpha(0.35)
+      .restart();
+  }
+
+
+  /* ==========================================================
+     POINTER MOVE
      ========================================================== */
 
   function pointerMoved(event) {
@@ -478,15 +652,16 @@
       rect.left -
       width / 2;
 
+
     const newY =
       event.clientY -
       rect.top -
       height / 2;
 
 
-    /*
-     * Calculate cursor velocity.
-     */
+    /* --------------------------------------------------------
+       POINTER VELOCITY
+       -------------------------------------------------------- */
 
     if (
       previousPointerX !== null &&
@@ -505,14 +680,20 @@
 
       pointerVX = 0;
       pointerVY = 0;
+
     }
 
+
+    /* --------------------------------------------------------
+       UPDATE POSITION
+       -------------------------------------------------------- */
 
     previousPointerX =
       newX;
 
     previousPointerY =
       newY;
+
 
     pointerX =
       newX;
@@ -521,9 +702,12 @@
       newY;
 
 
-    /*
-     * Wake simulation immediately.
-     */
+    pointerActive = true;
+
+
+    /* --------------------------------------------------------
+       WAKE PHYSICS IMMEDIATELY
+       -------------------------------------------------------- */
 
     simulation
       .alpha(0.7)
@@ -537,55 +721,127 @@
 
   function pointerLeft() {
 
+    pointerActive = false;
+
+
     pointerX = null;
     pointerY = null;
 
+
     previousPointerX = null;
     previousPointerY = null;
+
 
     pointerVX = 0;
     pointerVY = 0;
 
 
     /*
-     * Let centre forces pull everything back together.
+     * Give the restoring forces enough energy to bring
+     * displaced particles home quickly.
      */
 
     simulation
-      .alpha(0.45)
+      .alpha(0.55)
       .restart();
   }
 
 
   /* ==========================================================
-     POINTER ENTER
+     TOUCH MOVE
      ========================================================== */
 
-  function pointerEntered(event) {
+  function touchMoved(event) {
+
+    if (
+      !event.touches ||
+      !event.touches.length
+    ) {
+
+      return;
+    }
+
+
+    event.preventDefault();
+
+
+    const touch =
+      event.touches[0];
+
 
     const rect =
       canvas.getBoundingClientRect();
 
-    pointerX =
-      event.clientX -
+
+    const newX =
+      touch.clientX -
       rect.left -
       width / 2;
 
-    pointerY =
-      event.clientY -
+
+    const newY =
+      touch.clientY -
       rect.top -
       height / 2;
 
+
+    if (
+      previousPointerX !== null &&
+      previousPointerY !== null
+    ) {
+
+      pointerVX =
+        newX -
+        previousPointerX;
+
+      pointerVY =
+        newY -
+        previousPointerY;
+
+    } else {
+
+      pointerVX = 0;
+      pointerVY = 0;
+
+    }
+
+
     previousPointerX =
-      pointerX;
+      newX;
 
     previousPointerY =
-      pointerY;
+      newY;
+
+
+    pointerX =
+      newX;
+
+    pointerY =
+      newY;
+
+
+    pointerActive = true;
+
+
+    simulation
+      .alpha(0.7)
+      .restart();
   }
 
 
   /* ==========================================================
-     CANVAS SIZE
+     TOUCH END
+     ========================================================== */
+
+  function touchEnded() {
+
+    pointerLeft();
+
+  }
+
+
+  /* ==========================================================
+     RESIZE CANVAS
      ========================================================== */
 
   function resizeCanvas() {
@@ -593,14 +849,21 @@
     const rect =
       canvas.getBoundingClientRect();
 
+
     width =
       rect.width ||
       window.innerWidth;
+
 
     height =
       rect.height ||
       window.innerHeight;
 
+
+    /*
+     * Limit DPR to 2 to avoid unnecessarily expensive
+     * rendering on very high-resolution displays.
+     */
 
     dpr =
       Math.min(
@@ -609,10 +872,15 @@
       );
 
 
+    /* --------------------------------------------------------
+       PHYSICAL CANVAS SIZE
+       -------------------------------------------------------- */
+
     canvas.width =
       Math.round(
         width * dpr
       );
+
 
     canvas.height =
       Math.round(
@@ -620,12 +888,21 @@
       );
 
 
+    /* --------------------------------------------------------
+       CSS SIZE
+       -------------------------------------------------------- */
+
     canvas.style.width =
       `${width}px`;
+
 
     canvas.style.height =
       `${height}px`;
 
+
+    /* --------------------------------------------------------
+       HIGH-DPI SCALING
+       -------------------------------------------------------- */
 
     ctx.setTransform(
       dpr,
@@ -642,17 +919,65 @@
 
 
   /* ==========================================================
+     REDUCED MOTION
+     ========================================================== */
+
+  function prefersReducedMotion() {
+
+    return window.matchMedia(
+      "(prefers-reduced-motion: reduce)"
+    ).matches;
+  }
+
+
+  /* ==========================================================
      INITIALIZE
      ========================================================== */
 
   function init() {
 
+
+    /* --------------------------------------------------------
+       SIZE CANVAS FIRST
+       -------------------------------------------------------- */
+
     resizeCanvas();
+
+
+    /* --------------------------------------------------------
+       CREATE ALREADY-CENTRED PARTICLES
+       -------------------------------------------------------- */
 
     createNodes();
 
+
+    /* --------------------------------------------------------
+       BUILD PHYSICS
+       -------------------------------------------------------- */
+
     createSimulation();
 
+
+    /* --------------------------------------------------------
+       REDUCED MOTION
+
+       Keep the packed visualization but don't add pointer
+       interaction when reduced motion is requested.
+       -------------------------------------------------------- */
+
+    if (
+      prefersReducedMotion()
+    ) {
+
+      draw();
+
+      return;
+    }
+
+
+    /* --------------------------------------------------------
+       POINTER EVENTS
+       -------------------------------------------------------- */
 
     canvas.addEventListener(
       "pointerenter",
@@ -674,6 +999,35 @@
       pointerLeft
     );
 
+
+    /* --------------------------------------------------------
+       TOUCH EVENTS
+       -------------------------------------------------------- */
+
+    canvas.addEventListener(
+      "touchmove",
+      touchMoved,
+      {
+        passive: false
+      }
+    );
+
+
+    canvas.addEventListener(
+      "touchend",
+      touchEnded
+    );
+
+
+    canvas.addEventListener(
+      "touchcancel",
+      touchEnded
+    );
+
+
+    /* --------------------------------------------------------
+       RESPONSIVE RESIZE
+       -------------------------------------------------------- */
 
     window.addEventListener(
       "resize",
@@ -699,6 +1053,7 @@
   } else {
 
     init();
+
   }
 
 })();
