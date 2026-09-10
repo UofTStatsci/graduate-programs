@@ -518,100 +518,76 @@
     }
 
 
-    /* ==========================================================
-       ALUMNI MAP
-       ========================================================== */
+  <!-- ======================================================
+     ALUMNI — INTERACTIVE GLOBE
+     ====================================================== -->
 
-    .map-panel {
-      background: #071b33;
+<section
+  id="alumni"
+  class="panel globe-panel"
+>
 
-      display: grid;
+  <div class="globe-copy">
 
-      grid-template-columns:
-        0.65fr
-        1.35fr;
+    <div class="eyebrow">
+      Career &amp; Alumni Network
+    </div>
 
-      gap: 4vw;
+    <h2>
+      From Toronto
+      <br>
+      to the world.
+    </h2>
 
-      align-items: center;
-    }
+    <p>
+      Our alumni community extends around the globe,
+      connecting U of T Statistical Sciences with cities
+      across Canada and around the world.
+    </p>
 
-    .map-copy p {
-      max-width: 480px;
-      line-height: 1.55;
-    }
+    <div class="globe-stats">
 
-    .map-note {
-      font-size: 0.8rem;
-      opacity: 0.55;
-    }
+      <div>
+        <strong id="alumni-total">12K+</strong>
+        <span>alumni</span>
+      </div>
 
-    #map {
-      height: 75vh;
-      position: relative;
-    }
+      <div>
+        <strong id="city-total">—</strong>
+        <span>cities</span>
+      </div>
 
-    #map svg {
-      display: block;
+      <div>
+        <strong id="country-total">—</strong>
+        <span>countries</span>
+      </div>
 
-      width: 100%;
-      height: 100%;
-    }
+    </div>
 
-    .land {
-      fill: #0d3156;
+    <p class="globe-instruction">
+      Drag to rotate · Hover over a city to explore
+    </p>
 
-      stroke: #43627f;
-      stroke-width: 0.45;
-    }
+  </div>
 
-    .arc {
-      fill: none;
 
-      stroke: #fff;
-      stroke-opacity: 0.38;
-      stroke-width: 1.2;
-    }
+  <div
+    id="alumni-globe"
+    class="globe-container"
+    aria-label="Interactive globe showing cities where U of T Statistical Sciences alumni are located"
+  >
 
-    .arc:hover {
-      stroke-opacity: 1;
-      stroke-width: 2.5;
-    }
+    <canvas id="globe-canvas"></canvas>
 
-    .city-dot {
-      fill: #fff;
-    }
+    <div
+      id="globe-tooltip"
+      class="globe-tooltip"
+      aria-hidden="true"
+    ></div>
 
-    .origin {
-      fill: var(--blue);
+  </div>
 
-      stroke: #fff;
-      stroke-width: 2;
-    }
-
-    .tooltip {
-      position: absolute;
-
-      pointer-events: none;
-
-      background: #fff;
-      color: #111;
-
-      padding:
-        7px
-        9px;
-
-      font-size: 0.75rem;
-
-      opacity: 0;
-
-      transform:
-        translate(
-          8px,
-          -100%
-        );
-    }
-
+</section>
 
     /* ==========================================================
        RESEARCH
