@@ -2,10 +2,16 @@
    U of T Statistical Sciences
    Alumni Globe
 
-   Interactive orthographic globe
-   with parabolic connections from Toronto.
+   Interactive orthographic globe with connections
+   from Toronto to alumni cities.
 
-   Public alumni data is aggregated to CITY level only.
+   Visual treatment:
+   - White globe
+   - Pale blue land
+   - U of T blue geographic details
+   - Blue alumni nodes and arcs
+   - Drag to rotate
+   - Hover cities for alumni counts
    ========================================================== */
 
 (() => {
@@ -32,6 +38,10 @@
     typeof d3 === "undefined" ||
     typeof topojson === "undefined"
   ) {
+    console.warn(
+      "Alumni globe: required element or library not found."
+    );
+
     return;
   }
 
@@ -41,15 +51,52 @@
 
 
   /* ==========================================================
-     TORONTO — ORIGIN
+     COLOURS
+     ========================================================== */
+
+  const COLORS = {
+
+    ocean:
+      "#ffffff",
+
+    land:
+      "#d9e8ed",
+
+    blue:
+      "#0180a5",
+
+    darkBlue:
+      "#071b33",
+
+    landOutline:
+      "rgba(1,128,165,0.55)",
+
+    graticule:
+      "rgba(1,128,165,0.18)",
+
+    arc:
+      "rgba(1,128,165,0.42)",
+
+    arcHover:
+      "rgba(1,128,165,1)"
+
+  };
+
+
+  /* ==========================================================
+     TORONTO ORIGIN
      ========================================================== */
 
   const TORONTO = {
-    name: "Toronto",
+
+    name:
+      "Toronto",
+
     coordinates: [
       -79.3832,
       43.6532
     ]
+
   };
 
 
@@ -62,9 +109,18 @@
   let dpr = 1;
 
   let land = null;
+
   let alumni = [];
 
   let hoveredCity = null;
+
+
+  /*
+   * Initial globe rotation.
+   *
+   * Positions North America prominently when the
+   * visualization first loads.
+   */
 
   let rotation = [
     79,
@@ -87,11 +143,10 @@
 
 
   const path =
-    d3
-      .geoPath(
-        projection,
-        context
-      );
+    d3.geoPath(
+      projection,
+      context
+    );
 
 
   /* ==========================================================
@@ -108,20 +163,43 @@
 
         fetch(
           "assets/data/land-110m.json"
-        ).then(
-          response =>
-            response.json()
-        ),
+        )
+          .then(
+            response => {
+
+              if (!response.ok) {
+                throw new Error(
+                  "Unable to load land-110m.json"
+                );
+              }
+
+              return response.json();
+            }
+          ),
+
 
         fetch(
           "assets/data/alumni-cities.json"
-        ).then(
-          response =>
-            response.json()
         )
+          .then(
+            response => {
+
+              if (!response.ok) {
+                throw new Error(
+                  "Unable to load alumni-cities.json"
+                );
+              }
+
+              return response.json();
+            }
+          )
 
       ]);
 
+
+    /* --------------------------------------------------------
+       Convert TopoJSON to GeoJSON
+       -------------------------------------------------------- */
 
     land =
       topojson.feature(
@@ -130,11 +208,42 @@
       );
 
 
+    /* --------------------------------------------------------
+       Validate alumni coordinates
+       -------------------------------------------------------- */
+
     alumni =
       alumniData.filter(
         d =>
-          Number.isFinite(d.longitude) &&
-          Number.isFinite(d.latitude)
+          Number.isFinite(
+            Number(d.longitude)
+          ) &&
+          Number.isFinite(
+            Number(d.latitude)
+          )
+      );
+
+
+    /*
+     * Ensure numeric values are actually numbers.
+     */
+
+    alumni =
+      alumni.map(
+        d => ({
+
+          ...d,
+
+          longitude:
+            Number(d.longitude),
+
+          latitude:
+            Number(d.latitude),
+
+          count:
+            Number(d.count) || 0
+
+        })
       );
 
 
@@ -143,7 +252,7 @@
 
 
   /* ==========================================================
-     STATS
+     ALUMNI STATS
      ========================================================== */
 
   function updateStats() {
@@ -157,9 +266,11 @@
 
     const countries =
       new Set(
-        alumni.map(
-          d => d.country
-        )
+        alumni
+          .map(
+            d => d.country
+          )
+          .filter(Boolean)
       );
 
 
@@ -238,6 +349,10 @@
       );
 
 
+    /* --------------------------------------------------------
+       Canvas resolution
+       -------------------------------------------------------- */
+
     canvas.width =
       Math.round(
         width * dpr
@@ -268,6 +383,10 @@
     );
 
 
+    /* --------------------------------------------------------
+       Projection
+       -------------------------------------------------------- */
+
     projection
 
       .translate([
@@ -292,10 +411,9 @@
 
 
   /* ==========================================================
-     VISIBILITY
+     POINT VISIBILITY
 
-     Determines whether a point is currently on the
-     visible hemisphere.
+     Determines whether a city is on the visible hemisphere.
      ========================================================== */
 
   function isVisible(
@@ -308,6 +426,11 @@
         width / 2,
         height / 2
       ]);
+
+
+    if (!center) {
+      return false;
+    }
 
 
     return (
@@ -324,61 +447,16 @@
 
 
   /* ==========================================================
-     GREAT-CIRCLE / PARABOLIC ARC
+     DRAW CONNECTION ARC
      ========================================================== */
 
-  function drawArc(destination) {
-
-    const start =
-      TORONTO.coordinates;
-
-
-    const end = [
-      destination.longitude,
-      destination.latitude
-    ];
-
+  function drawArc(
+    destination
+  ) {
 
     /*
-     * Interpolate along a geographic great-circle.
-     */
-
-    const interpolate =
-      d3.geoInterpolate(
-        start,
-        end
-      );
-
-
-    const steps = 50;
-
-
-    const points =
-      d3.range(
-        steps + 1
-      ).map(
-        i =>
-          interpolate(
-            i / steps
-          )
-      );
-
-
-    /*
-     * Project the geographic points.
-     */
-
-    const projected =
-      points.map(
-        point =>
-          projection(
-            point
-          )
-      );
-
-
-    /*
-     * Skip connections entirely behind globe.
+     * Don't draw an arc if its destination is on
+     * the back side of the globe.
      */
 
     if (
@@ -389,6 +467,16 @@
     ) {
       return;
     }
+
+
+    const start =
+      TORONTO.coordinates;
+
+
+    const end = [
+      destination.longitude,
+      destination.latitude
+    ];
 
 
     const projectedStart =
@@ -411,13 +499,40 @@
     }
 
 
-    /*
-     * Build a screen-space parabolic lift.
+    /* --------------------------------------------------------
+       Geographic interpolation
 
-     * The midpoint rises away from the globe,
-     * giving the connection the appearance of
-     * a string arching above the surface.
-     */
+       Creates the geographic path between Toronto
+       and the destination.
+       -------------------------------------------------------- */
+
+    const interpolate =
+      d3.geoInterpolate(
+        start,
+        end
+      );
+
+
+    const steps =
+      50;
+
+
+    const points =
+      d3
+        .range(
+          steps + 1
+        )
+        .map(
+          i =>
+            interpolate(
+              i / steps
+            )
+        );
+
+
+    /* --------------------------------------------------------
+       Determine arc height
+       -------------------------------------------------------- */
 
     const dx =
       projectedEnd[0] -
@@ -429,31 +544,67 @@
       projectedStart[1];
 
 
-    const distance =
+    const screenDistance =
       Math.sqrt(
         dx * dx +
         dy * dy
       );
 
 
+    /*
+     * Longer connections rise higher from the globe.
+     */
+
     const lift =
       Math.min(
-        100,
-        distance * 0.22
+        105,
+        screenDistance * 0.22
       );
 
+
+    /* --------------------------------------------------------
+       Draw string
+       -------------------------------------------------------- */
 
     context.beginPath();
 
 
+    let started =
+      false;
+
+
     for (
       let i = 0;
-      i < projected.length;
+      i < points.length;
       i++
     ) {
 
+      const geographicPoint =
+        points[i];
+
+
+      /*
+       * Skip portions that pass behind the globe.
+       */
+
+      if (
+        !isVisible(
+          geographicPoint[0],
+          geographicPoint[1]
+        )
+      ) {
+
+        started =
+          false;
+
+        continue;
+      }
+
+
       const point =
-        projected[i];
+        projection(
+          geographicPoint
+        );
 
 
       if (!point) {
@@ -463,16 +614,17 @@
 
       const t =
         i /
-        (projected.length - 1);
+        (points.length - 1);
 
 
       /*
-       * Parabola:
+       * Parabolic curve:
        *
        * 4t(1-t)
        *
-       * 0 at both endpoints
-       * 1 at midpoint
+       * t = 0     → 0
+       * t = .5    → 1
+       * t = 1     → 0
        */
 
       const arcHeight =
@@ -491,12 +643,16 @@
         arcHeight;
 
 
-      if (i === 0) {
+      if (!started) {
 
         context.moveTo(
           x,
           y
         );
+
+
+        started =
+          true;
 
       } else {
 
@@ -510,16 +666,24 @@
     }
 
 
+    /* --------------------------------------------------------
+       Arc appearance
+       -------------------------------------------------------- */
+
+    const highlighted =
+      hoveredCity === destination;
+
+
     context.strokeStyle =
-      hoveredCity === destination
-        ? "rgba(255,255,255,1)"
-        : "rgba(255,255,255,.24)";
+      highlighted
+        ? COLORS.arcHover
+        : COLORS.arc;
 
 
     context.lineWidth =
-      hoveredCity === destination
-        ? 1.8
-        : 0.75;
+      highlighted
+        ? 2
+        : 0.9;
 
 
     context.stroke();
@@ -537,6 +701,10 @@
     }
 
 
+    /* --------------------------------------------------------
+       Clear canvas
+       -------------------------------------------------------- */
+
     context.clearRect(
       0,
       0,
@@ -545,109 +713,125 @@
     );
 
 
+    /* --------------------------------------------------------
+       Apply current rotation
+       -------------------------------------------------------- */
+
     projection.rotate(
       rotation
     );
 
 
-    /* --------------------------------------------------------
-       Ocean
-       -------------------------------------------------------- */
+    /* ========================================================
+       WHITE SPHERE
+       ======================================================== */
 
     context.beginPath();
+
 
     path({
       type: "Sphere"
     });
 
+
     context.fillStyle =
-      "#071b33";
+      COLORS.ocean;
+
 
     context.fill();
 
 
-    /* --------------------------------------------------------
-       Globe outline
-       -------------------------------------------------------- */
+    /* ========================================================
+       LAND
+       ======================================================== */
 
     context.beginPath();
 
-    path({
-      type: "Sphere"
-    });
-
-    context.strokeStyle =
-      "rgba(255,255,255,.28)";
-
-    context.lineWidth =
-      0.8;
-
-    context.stroke();
-
-
-    /* --------------------------------------------------------
-       Land
-       -------------------------------------------------------- */
-
-    context.beginPath();
 
     path(
       land
     );
 
+
     context.fillStyle =
-      "#0d3156";
+      COLORS.land;
+
 
     context.fill();
 
 
     context.strokeStyle =
-      "rgba(255,255,255,.16)";
+      COLORS.landOutline;
+
 
     context.lineWidth =
-      0.45;
+      0.55;
+
 
     context.stroke();
 
 
-    /* --------------------------------------------------------
-       Graticule
-       -------------------------------------------------------- */
+    /* ========================================================
+       GRATICULE
+       ======================================================== */
 
     context.beginPath();
+
 
     path(
       d3.geoGraticule10()
     );
 
+
     context.strokeStyle =
-      "rgba(255,255,255,.07)";
+      COLORS.graticule;
+
 
     context.lineWidth =
       0.5;
 
+
     context.stroke();
 
 
-    /* --------------------------------------------------------
-       Alumni connections
-       -------------------------------------------------------- */
+    /* ========================================================
+       ALUMNI CONNECTIONS
+       ======================================================== */
 
     for (
       const city
       of alumni
     ) {
 
-      drawArc(
-        city
-      );
+      /*
+       * Don't draw a Toronto → Toronto connection.
+       */
+
+      const isToronto =
+        Math.abs(
+          city.longitude -
+          TORONTO.coordinates[0]
+        ) < 0.05 &&
+        Math.abs(
+          city.latitude -
+          TORONTO.coordinates[1]
+        ) < 0.05;
+
+
+      if (!isToronto) {
+
+        drawArc(
+          city
+        );
+
+      }
 
     }
 
 
-    /* --------------------------------------------------------
-       Alumni cities
-       -------------------------------------------------------- */
+    /* ========================================================
+       ALUMNI CITY DOTS
+       ======================================================== */
 
     for (
       const city
@@ -677,20 +861,25 @@
 
 
       /*
-       * Slightly scale dots by alumni count,
-       * but cap them so Toronto-area cities
-       * don't overwhelm the globe.
+       * Alumni count controls dot size.
+
+       * Square root prevents cities with very large
+       * populations from dominating the globe.
        */
 
       const radius =
         Math.min(
-          6,
-          1.4 +
+          7,
+          1.5 +
           Math.sqrt(
             city.count
           ) *
           0.18
         );
+
+
+      const highlighted =
+        hoveredCity === city;
 
 
       context.beginPath();
@@ -699,7 +888,7 @@
       context.arc(
         point[0],
         point[1],
-        hoveredCity === city
+        highlighted
           ? radius + 2
           : radius,
         0,
@@ -708,17 +897,34 @@
 
 
       context.fillStyle =
-        "#ffffff";
+        COLORS.blue;
 
 
       context.fill();
 
+
+      /*
+       * White outline improves separation where many
+       * cities are geographically close together.
+       */
+
+      context.strokeStyle =
+        COLORS.ocean;
+
+
+      context.lineWidth =
+        highlighted
+          ? 2
+          : 0.8;
+
+
+      context.stroke();
     }
 
 
-    /* --------------------------------------------------------
-       Toronto origin
-       -------------------------------------------------------- */
+    /* ========================================================
+       TORONTO ORIGIN
+       ======================================================== */
 
     if (
       isVisible(
@@ -733,37 +939,87 @@
         );
 
 
+      /* ------------------------------------------------------
+         Outer Toronto ring
+         ------------------------------------------------------ */
+
       context.beginPath();
 
 
       context.arc(
         toronto[0],
         toronto[1],
-        5,
+        7,
         0,
         Math.PI * 2
       );
 
 
       context.fillStyle =
-        "#0180a5";
+        COLORS.darkBlue;
 
 
       context.fill();
 
 
       context.strokeStyle =
-        "#ffffff";
+        COLORS.blue;
 
 
       context.lineWidth =
-        2;
+        2.5;
 
 
       context.stroke();
 
+
+      /* ------------------------------------------------------
+         Inner Toronto point
+         ------------------------------------------------------ */
+
+      context.beginPath();
+
+
+      context.arc(
+        toronto[0],
+        toronto[1],
+        2.5,
+        0,
+        Math.PI * 2
+      );
+
+
+      context.fillStyle =
+        COLORS.ocean;
+
+
+      context.fill();
     }
 
+
+    /* ========================================================
+       OUTER GLOBE OUTLINE
+
+       Draw last so the sphere has a crisp edge.
+       ======================================================== */
+
+    context.beginPath();
+
+
+    path({
+      type: "Sphere"
+    });
+
+
+    context.strokeStyle =
+      "rgba(255,255,255,0.95)";
+
+
+    context.lineWidth =
+      1.25;
+
+
+    context.stroke();
   }
 
 
@@ -775,6 +1031,11 @@
     d3
       .drag()
 
+
+      /* ------------------------------------------------------
+         Drag start
+         ------------------------------------------------------ */
+
       .on(
         "start",
         () => {
@@ -784,6 +1045,11 @@
 
         }
       )
+
+
+      /* ------------------------------------------------------
+         Drag
+         ------------------------------------------------------ */
 
       .on(
         "drag",
@@ -798,6 +1064,10 @@
             event.dy *
             0.35;
 
+
+          /*
+           * Prevent flipping over the poles.
+           */
 
           rotation[1] =
             Math.max(
@@ -826,6 +1096,11 @@
         }
       )
 
+
+      /* ------------------------------------------------------
+         Drag end
+         ------------------------------------------------------ */
+
       .on(
         "end",
         () => {
@@ -838,10 +1113,12 @@
 
 
   /* ==========================================================
-     HOVER
+     CITY HOVER
      ========================================================== */
 
-  function pointerMoved(event) {
+  function pointerMoved(
+    event
+  ) {
 
     const rect =
       canvas.getBoundingClientRect();
@@ -861,8 +1138,12 @@
       null;
 
 
+    /*
+     * Hover hit area.
+     */
+
     let closestDistance =
-      14;
+      15;
 
 
     for (
@@ -959,13 +1240,24 @@
     y
   ) {
 
+    const locationParts = [
+      city.city,
+      city.province,
+      city.country
+    ].filter(Boolean);
+
+
     tooltip.innerHTML =
       `
-        <strong>${city.city}</strong>
+        <strong>
+          ${locationParts.join(", ")}
+        </strong>
+
         <span>
-          ${city.country}<br>
           ${city.count.toLocaleString()}
-          ${city.count === 1 ? "alumnus" : "alumni"}
+          ${city.count === 1
+            ? " alumnus"
+            : " alumni"}
         </span>
       `;
 
@@ -986,7 +1278,6 @@
       "aria-hidden",
       "false"
     );
-
   }
 
 
@@ -1000,7 +1291,6 @@
       "aria-hidden",
       "true"
     );
-
   }
 
 
@@ -1012,11 +1302,23 @@
 
     try {
 
+      /* ------------------------------------------------------
+         Load geographic + alumni data
+         ------------------------------------------------------ */
+
       await loadData();
 
 
+      /* ------------------------------------------------------
+         Size and draw globe
+         ------------------------------------------------------ */
+
       resize();
 
+
+      /* ------------------------------------------------------
+         Enable rotation
+         ------------------------------------------------------ */
 
       d3
         .select(canvas)
@@ -1024,6 +1326,10 @@
           drag
         );
 
+
+      /* ------------------------------------------------------
+         City hover
+         ------------------------------------------------------ */
 
       canvas.addEventListener(
         "pointermove",
@@ -1048,6 +1354,10 @@
       );
 
 
+      /* ------------------------------------------------------
+         Responsive resize
+         ------------------------------------------------------ */
+
       window.addEventListener(
         "resize",
         resize,
@@ -1065,7 +1375,6 @@
       );
 
     }
-
   }
 
 
