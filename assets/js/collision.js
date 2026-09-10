@@ -2,14 +2,14 @@
    U of T Statistics Graduate Programs
    Interactive Collision Hero
 
-   Behaviour:
-   - Particles begin already packed in the centre
-   - No visible "gathering" animation on page load
-   - Particles feel heavy rather than floaty
-   - Pointer has a strong, immediate physical impact
-   - Fast pointer movement transfers momentum to particles
-   - Particles return quickly to the central mass
-   - Collision keeps particles from overlapping
+   Physics model:
+   - Starts already assembled — no convergence animation
+   - Broad, loose central cloud
+   - Cursor behaves like a large invisible physical object
+   - Strong immediate displacement
+   - Ball-to-ball collision transfers movement through cluster
+   - Moderate damping gives particles weight
+   - Gentle centering restores the overall composition
    ========================================================== */
 
 (() => {
@@ -20,7 +20,8 @@
      CANVAS
      ========================================================== */
 
-  const canvas = document.getElementById("collision-canvas");
+  const canvas =
+    document.getElementById("collision-canvas");
 
   if (!canvas) {
     console.warn("Collision canvas not found.");
@@ -32,7 +33,8 @@
     return;
   }
 
-  const ctx = canvas.getContext("2d");
+  const ctx =
+    canvas.getContext("2d");
 
 
   /* ==========================================================
@@ -41,91 +43,117 @@
 
   const PARTICLE_COUNT = 150;
 
-  /*
-   * Particle sizes.
-   */
   const MIN_RADIUS = 5;
   const MAX_RADIUS = 16;
 
 
   /*
-   * INITIAL PACKING
+   * INITIAL CLOUD
    *
-   * The particles are positioned geometrically before
-   * anything is displayed.
+   * Higher = larger initial cluster.
    *
-   * This controls the spacing of that initial cluster.
+   * This is intentionally broader than the previous
+   * tightly-packed ball.
    */
-  const INITIAL_SPACING = 14;
+  const CLOUD_WIDTH = 0.52;
+  const CLOUD_HEIGHT = 0.50;
 
 
   /*
-   * CENTRE FORCE
+   * CENTERING
    *
-   * This does NOT build the initial cluster.
+   * Keep this relatively gentle.
    *
-   * Its job is to restore particles after the mouse
-   * knocks them out of position.
-   *
-   * Higher = faster return.
+   * The centre force should maintain the composition,
+   * not overpower pointer interaction.
    */
-  const CENTER_STRENGTH = 0.12;
+  const CENTER_STRENGTH_X = 0.018;
+  const CENTER_STRENGTH_Y = 0.018;
 
 
   /*
-   * WEIGHT / DAMPING
+   * WEIGHT / FRICTION
    *
-   * Higher velocityDecay makes the balls feel heavier
-   * and less like floating bubbles.
+   * D3 velocityDecay:
+   *
+   * lower = more momentum / slippery
+   * higher = more damping / heavy
+   *
+   * 0.22 gives substantially more physical movement
+   * than the previous 0.38.
    */
-  const VELOCITY_DECAY = 0.38;
+  const VELOCITY_DECAY = 0.22;
 
 
   /*
-   * POINTER INFLUENCE AREA
+   * CURSOR
    *
-   * Balls inside this radius are physically pushed
-   * by the mouse.
+   * Think of this as the radius of an invisible ball
+   * attached to the mouse.
    */
-  const POINTER_RADIUS = 200;
+  const POINTER_RADIUS = 82;
 
 
   /*
-   * POINTER FORCE
-   *
-   * Higher = stronger displacement.
-   *
-   * This is intentionally quite strong.
+   * Extra space between pointer and visible particles.
    */
-  const POINTER_FORCE = 11;
+  const POINTER_PADDING = 4;
 
 
   /*
-   * POINTER MOMENTUM TRANSFER
+   * How aggressively particles are pushed out of
+   * pointer overlap.
    *
-   * When the mouse moves quickly, some of that velocity
-   * is transferred into the balls.
+   * 1 = full positional correction.
    */
-  const POINTER_VELOCITY_FORCE = 0.16;
+  const POINTER_POSITION_STRENGTH = 0.92;
 
 
   /*
-   * COLLISION
+   * Velocity imparted by cursor movement.
+   *
+   * This is what makes a fast sweep genuinely knock
+   * particles sideways.
    */
-  const COLLISION_PADDING = 1.5;
+  const POINTER_MOMENTUM = 0.42;
+
+
+  /*
+   * Additional outward velocity when the pointer
+   * physically intersects a particle.
+   */
+  const POINTER_KICK = 0.85;
+
+
+  /*
+   * Limit extreme mouse velocities.
+   *
+   * Prevents a huge jump if the browser skips frames.
+   */
+  const MAX_POINTER_SPEED = 45;
+
+
+  /*
+   * BALL COLLISION
+   */
+  const COLLISION_PADDING = 2;
   const COLLISION_STRENGTH = 1;
-  const COLLISION_ITERATIONS = 8;
+  const COLLISION_ITERATIONS = 4;
 
 
   /*
-   * INVISIBLE STARTUP TICKS
-   *
-   * Because particles already begin in a geometric cluster,
-   * D3 only needs a few ticks to resolve minor overlaps.
-   *
-   * None of these frames are shown to the visitor.
+   * Invisible settling before first frame.
    */
-  const INITIAL_SETTLE_TICKS = 50;
+  const SETTLE_TICKS = 120;
+
+
+  /*
+   * Keep the simulation mildly alive so interaction
+   * remains responsive.
+   */
+  const IDLE_ALPHA_TARGET = 0.025;
+
+  const ACTIVE_ALPHA_TARGET = 0.16;
 
 
   /* ==========================================================
@@ -137,18 +165,24 @@
   let dpr = 1;
 
   let nodes = [];
+
   let simulation = null;
 
-  let pointerX = null;
-  let pointerY = null;
 
-  let previousPointerX = null;
-  let previousPointerY = null;
+  const pointer = {
 
-  let pointerVX = 0;
-  let pointerVY = 0;
+    x: 0,
+    y: 0,
 
-  let pointerActive = false;
+    previousX: 0,
+    previousY: 0,
+
+    vx: 0,
+    vy: 0,
+
+    active: false
+
+  };
 
 
   /* ==========================================================
@@ -156,34 +190,79 @@
      ========================================================== */
 
   function random(min, max) {
-    return min + Math.random() * (max - min);
+
+    return (
+      min +
+      Math.random() *
+      (max - min)
+    );
+
+  }
+
+
+  function clamp(
+    value,
+    minimum,
+    maximum
+  ) {
+
+    return Math.max(
+      minimum,
+      Math.min(
+        maximum,
+        value
+      )
+    );
+
   }
 
 
   /* ==========================================================
-     CREATE INITIAL PACKED CLUSTER
+     INITIAL DISTRIBUTION
      ========================================================== */
 
   function createNodes() {
 
     nodes = [];
 
+
     /*
-     * GOLDEN ANGLE
-     *
-     * This distributes points evenly around a spiral.
-     *
-     * Most importantly, it means the particles are already
-     * located in the centre before the first frame.
+     * Determine the desired cloud dimensions from
+     * the actual viewport.
+     */
+
+    const cloudWidth =
+      Math.min(
+        width * CLOUD_WIDTH,
+        720
+      );
+
+
+    const cloudHeight =
+      Math.min(
+        height * CLOUD_HEIGHT,
+        480
+      );
+
+
+    /*
+     * Golden angle gives us a predictable, visually
+     * even distribution without requiring the live
+     * simulation to assemble the cloud.
      */
 
     const goldenAngle =
-      Math.PI * (3 - Math.sqrt(5));
+      Math.PI *
+      (3 - Math.sqrt(5));
 
 
-    for (let i = 0; i < PARTICLE_COUNT; i++) {
+    for (
+      let i = 0;
+      i < PARTICLE_COUNT;
+      i++
+    ) {
 
-      const particleRadius =
+      const r =
         random(
           MIN_RADIUS,
           MAX_RADIUS
@@ -191,42 +270,70 @@
 
 
       /*
-       * sqrt(i) keeps the density approximately even
-       * as the spiral grows outward.
+       * Normalized radial position.
        */
 
-      const distance =
-        INITIAL_SPACING *
-        Math.sqrt(i);
+      const progress =
+        Math.sqrt(
+          (i + 0.5) /
+          PARTICLE_COUNT
+        );
 
 
       const angle =
-        i * goldenAngle;
+        i *
+        goldenAngle;
+
+
+      /*
+       * Elliptical cloud.
+       *
+       * Small random variation removes the obvious
+       * mathematical spiral appearance.
+       */
+
+      const jitter =
+        random(
+          0.90,
+          1.08
+        );
+
+
+      const x =
+        Math.cos(angle) *
+        progress *
+        cloudWidth *
+        0.5 *
+        jitter;
+
+
+      const y =
+        Math.sin(angle) *
+        progress *
+        cloudHeight *
+        0.5 *
+        jitter;
 
 
       nodes.push({
 
-        r: particleRadius,
+        r,
 
-        x:
-          Math.cos(angle) *
-          distance,
-
-        y:
-          Math.sin(angle) *
-          distance,
+        x,
+        y,
 
         vx: 0,
-
         vy: 0
 
       });
+
     }
+
   }
 
 
   /* ==========================================================
-     CREATE SIMULATION
+     SIMULATION
      ========================================================== */
 
   function createSimulation() {
@@ -236,103 +343,98 @@
     }
 
 
-    simulation = d3
-      .forceSimulation(nodes)
+    simulation =
+      d3.forceSimulation(nodes)
 
 
-      /* ------------------------------------------------------
-         HEAVY MOTION
-         ------------------------------------------------------ */
+        /* ----------------------------------------------------
+           MASS / DAMPING
+           ---------------------------------------------------- */
 
-      .velocityDecay(
-        VELOCITY_DECAY
-      )
-
-
-      /* ------------------------------------------------------
-         RETURN TO CENTRE — X
-         ------------------------------------------------------ */
-
-      .force(
-        "x",
-
-        d3
-          .forceX(0)
-          .strength(
-            CENTER_STRENGTH
-          )
-      )
+        .velocityDecay(
+          VELOCITY_DECAY
+        )
 
 
-      /* ------------------------------------------------------
-         RETURN TO CENTRE — Y
-         ------------------------------------------------------ */
+        /* ----------------------------------------------------
+           GENTLE HORIZONTAL CENTERING
+           ---------------------------------------------------- */
 
-      .force(
-        "y",
+        .force(
+          "x",
 
-        d3
-          .forceY(0)
-          .strength(
-            CENTER_STRENGTH
-          )
-      )
-
-
-      /* ------------------------------------------------------
-         HARD COLLISION
-         ------------------------------------------------------ */
-
-      .force(
-        "collide",
-
-        d3
-          .forceCollide()
-
-          .radius(
-            d =>
-              d.r +
-              COLLISION_PADDING
-          )
-
-          .strength(
-            COLLISION_STRENGTH
-          )
-
-          .iterations(
-            COLLISION_ITERATIONS
-          )
-      )
+          d3
+            .forceX(0)
+            .strength(
+              CENTER_STRENGTH_X
+            )
+        )
 
 
-      /*
-       * Stop automatic animation while we prepare
-       * the opening arrangement.
-       */
+        /* ----------------------------------------------------
+           GENTLE VERTICAL CENTERING
+           ---------------------------------------------------- */
 
-      .stop();
+        .force(
+          "y",
+
+          d3
+            .forceY(0)
+            .strength(
+              CENTER_STRENGTH_Y
+            )
+        )
+
+
+        /* ----------------------------------------------------
+           BALL-TO-BALL COLLISION
+           ---------------------------------------------------- */
+
+        .force(
+          "collide",
+
+          d3
+            .forceCollide()
+
+            .radius(
+              d =>
+                d.r +
+                COLLISION_PADDING
+            )
+
+            .strength(
+              COLLISION_STRENGTH
+            )
+
+            .iterations(
+              COLLISION_ITERATIONS
+            )
+        )
+
+
+        .stop();
 
 
     /* ========================================================
-       INVISIBLE INITIAL SETTLE
+       SETTLE OFF-SCREEN
        ======================================================== */
 
-    simulation.alpha(0.7);
+    simulation.alpha(0.45);
 
 
     for (
       let i = 0;
-      i < INITIAL_SETTLE_TICKS;
+      i < SETTLE_TICKS;
       i++
     ) {
 
       simulation.tick();
+
     }
 
 
     /*
-     * Remove any momentum generated by those
-     * invisible collision ticks.
+     * Remove residual motion.
      */
 
     for (const node of nodes) {
@@ -343,44 +445,50 @@
     }
 
 
-    /* ========================================================
-       FIRST VISIBLE FRAME
-       ======================================================== */
+    /*
+     * Draw the already-complete opening state.
+     */
 
     draw();
 
 
     /* ========================================================
-       START LIVE PHYSICS
+       START LIVE SIMULATION
        ======================================================== */
 
     simulation
 
-      .alpha(0.03)
+      .alpha(0.08)
 
-      .alphaTarget(0)
+      .alphaTarget(
+        IDLE_ALPHA_TARGET
+      )
 
       .on(
         "tick",
-        draw
+        ticked
       )
 
       .restart();
+
   }
 
 
   /* ==========================================================
-     POINTER FORCE
+     POINTER COLLISION
+
+     This is the important part.
+
+     Instead of applying a distant magnetic repulsion,
+     the cursor acts as an actual circular body.
+
+     If a particle overlaps that circle, we immediately
+     resolve the overlap.
      ========================================================== */
 
-  function applyPointerForce() {
+  function collideWithPointer() {
 
-    if (
-      !pointerActive ||
-      pointerX === null ||
-      pointerY === null
-    ) {
-
+    if (!pointer.active) {
       return;
     }
 
@@ -388,38 +496,31 @@
     for (const node of nodes) {
 
 
-      /* ------------------------------------------------------
-         DISTANCE FROM POINTER
-         ------------------------------------------------------ */
-
       const dx =
         node.x -
-        pointerX;
+        pointer.x;
+
 
       const dy =
         node.y -
-        pointerY;
+        pointer.y;
 
 
-      const distanceSquared =
+      let distanceSquared =
         dx * dx +
         dy * dy;
 
 
-      /*
-       * Include the particle's own radius so larger
-       * balls begin reacting slightly sooner.
-       */
-
-      const interactionRadius =
+      const minimumDistance =
         POINTER_RADIUS +
-        node.r;
+        node.r +
+        POINTER_PADDING;
 
 
       if (
         distanceSquared <
-        interactionRadius *
-        interactionRadius
+        minimumDistance *
+        minimumDistance
       ) {
 
 
@@ -429,96 +530,269 @@
           );
 
 
-        /*
-         * Prevent divide-by-zero if the pointer lands
-         * directly on the centre of a particle.
-         */
+        let nx;
+        let ny;
 
-        if (distance < 0.1) {
 
-          distance = 0.1;
+        /* ----------------------------------------------------
+           EXACT CENTRE CASE
+           ---------------------------------------------------- */
+
+        if (distance < 0.001) {
+
+          const angle =
+            Math.random() *
+            Math.PI *
+            2;
+
+
+          nx =
+            Math.cos(angle);
+
+
+          ny =
+            Math.sin(angle);
+
+
+          distance =
+            0.001;
+
+        } else {
+
+          nx =
+            dx /
+            distance;
+
+
+          ny =
+            dy /
+            distance;
 
         }
 
 
         /* ----------------------------------------------------
-           NORMALIZED DIRECTION AWAY FROM POINTER
+           OVERLAP
            ---------------------------------------------------- */
 
-        const nx =
-          dx / distance;
-
-        const ny =
-          dy / distance;
+        const overlap =
+          minimumDistance -
+          distance;
 
 
         /* ----------------------------------------------------
-           PROXIMITY
+           IMMEDIATE POSITIONAL CORRECTION
 
-           1 = directly beside cursor
-           0 = edge of interaction radius
+           This prevents the pointer from slowly "asking"
+           particles to move.
+
+           The particle simply cannot occupy the same
+           physical space as the cursor.
            ---------------------------------------------------- */
 
-        const proximity =
-          Math.max(
-            0,
-            1 -
-            distance /
-            interactionRadius
-          );
+        const correction =
+          overlap *
+          POINTER_POSITION_STRENGTH;
+
+
+        node.x +=
+          nx *
+          correction;
+
+
+        node.y +=
+          ny *
+          correction;
 
 
         /* ----------------------------------------------------
-           IMPACT
+           OUTWARD KICK
 
-           Squaring proximity means:
-
-           - Very strong close to cursor
-           - Rapid falloff farther away
-
-           This makes the mouse feel like a physical object
-           moving through the balls rather than a weak
-           magnetic field.
+           The deeper the overlap, the harder the hit.
            ---------------------------------------------------- */
 
-        const impact =
-          proximity *
-          proximity *
-          POINTER_FORCE;
+        const penetration =
+          overlap /
+          minimumDistance;
 
-
-        /* ----------------------------------------------------
-           DIRECT PHYSICAL IMPULSE
-           ---------------------------------------------------- */
 
         node.vx +=
           nx *
-          impact;
+          penetration *
+          POINTER_KICK *
+          8;
+
 
         node.vy +=
           ny *
-          impact;
+          penetration *
+          POINTER_KICK *
+          8;
 
 
         /* ----------------------------------------------------
-           TRANSFER MOUSE MOMENTUM
+           TRANSFER CURSOR MOMENTUM
 
-           A quick mouse sweep therefore hits harder than
-           slowly hovering in the same place.
+           This gives horizontal/vertical mouse sweeps
+           directional influence rather than merely pushing
+           particles radially away.
            ---------------------------------------------------- */
 
         node.vx +=
-          pointerVX *
-          proximity *
-          POINTER_VELOCITY_FORCE;
+          pointer.vx *
+          POINTER_MOMENTUM;
+
 
         node.vy +=
-          pointerVY *
-          proximity *
-          POINTER_VELOCITY_FORCE;
+          pointer.vy *
+          POINTER_MOMENTUM;
 
       }
+
     }
+
+  }
+
+
+  /* ==========================================================
+     KEEP PARTICLES WITHIN HERO
+     ========================================================== */
+
+  function constrainToViewport() {
+
+    /*
+     * Coordinates are centred around 0,0.
+     */
+
+    const halfWidth =
+      width / 2;
+
+
+    const halfHeight =
+      height / 2;
+
+
+    for (const node of nodes) {
+
+
+      /* LEFT */
+
+      if (
+        node.x - node.r <
+        -halfWidth
+      ) {
+
+        node.x =
+          -halfWidth +
+          node.r;
+
+
+        node.vx =
+          Math.abs(
+            node.vx
+          ) *
+          0.45;
+
+      }
+
+
+      /* RIGHT */
+
+      if (
+        node.x + node.r >
+        halfWidth
+      ) {
+
+        node.x =
+          halfWidth -
+          node.r;
+
+
+        node.vx =
+          -Math.abs(
+            node.vx
+          ) *
+          0.45;
+
+      }
+
+
+      /* TOP */
+
+      if (
+        node.y - node.r <
+        -halfHeight
+      ) {
+
+        node.y =
+          -halfHeight +
+          node.r;
+
+
+        node.vy =
+          Math.abs(
+            node.vy
+          ) *
+          0.45;
+
+      }
+
+
+      /* BOTTOM */
+
+      if (
+        node.y + node.r >
+        halfHeight
+      ) {
+
+        node.y =
+          halfHeight -
+          node.r;
+
+
+        node.vy =
+          -Math.abs(
+            node.vy
+          ) *
+          0.45;
+
+      }
+
+    }
+
+  }
+
+
+  /* ==========================================================
+     TICK
+     ========================================================== */
+
+  function ticked() {
+
+    /*
+     * Resolve pointer overlap every physics frame.
+     */
+
+    collideWithPointer();
+
+
+    constrainToViewport();
+
+
+    /*
+     * Cursor velocity should rapidly decay when the
+     * mouse stops moving.
+     *
+     * Otherwise a stationary pointer would continue
+     * transferring its previous movement.
+     */
+
+    pointer.vx *= 0.48;
+    pointer.vy *= 0.48;
+
+
+    draw();
+
   }
 
 
@@ -527,18 +801,6 @@
      ========================================================== */
 
   function draw() {
-
-
-    /* --------------------------------------------------------
-       APPLY POINTER PHYSICS
-       -------------------------------------------------------- */
-
-    applyPointerForce();
-
-
-    /* --------------------------------------------------------
-       CLEAR
-       -------------------------------------------------------- */
 
     ctx.clearRect(
       0,
@@ -551,19 +813,15 @@
     ctx.save();
 
 
-    /* --------------------------------------------------------
-       MOVE ORIGIN TO CENTRE OF SCREEN
-       -------------------------------------------------------- */
+    /*
+     * Our simulation uses 0,0 as the visual centre.
+     */
 
     ctx.translate(
       width / 2,
       height / 2
     );
 
-
-    /* --------------------------------------------------------
-       WHITE PARTICLES
-       -------------------------------------------------------- */
 
     ctx.fillStyle =
       "#ffffff";
@@ -589,6 +847,34 @@
 
 
     ctx.restore();
+
+  }
+
+
+  /* ==========================================================
+     GET POINTER POSITION
+     ========================================================== */
+
+  function getPointerPosition(event) {
+
+    const rect =
+      canvas.getBoundingClientRect();
+
+
+    return {
+
+      x:
+        event.clientX -
+        rect.left -
+        width / 2,
+
+      y:
+        event.clientY -
+        rect.top -
+        height / 2
+
+    };
+
   }
 
 
@@ -598,42 +884,55 @@
 
   function pointerEntered(event) {
 
-    const rect =
-      canvas.getBoundingClientRect();
+    const position =
+      getPointerPosition(
+        event
+      );
 
 
-    pointerX =
-      event.clientX -
-      rect.left -
-      width / 2;
+    pointer.x =
+      position.x;
 
 
-    pointerY =
-      event.clientY -
-      rect.top -
-      height / 2;
+    pointer.y =
+      position.y;
 
 
-    previousPointerX =
-      pointerX;
-
-    previousPointerY =
-      pointerY;
+    pointer.previousX =
+      position.x;
 
 
-    pointerVX = 0;
-    pointerVY = 0;
+    pointer.previousY =
+      position.y;
 
-    pointerActive = true;
+
+    pointer.vx = 0;
+    pointer.vy = 0;
+
+
+    pointer.active = true;
+
+
+    simulation
+
+      .alphaTarget(
+        ACTIVE_ALPHA_TARGET
+      )
+
+      .alpha(0.35)
+
+      .restart();
 
 
     /*
-     * Wake the simulation immediately.
+     * Resolve immediately rather than waiting
+     * for the next scheduled tick.
      */
 
-    simulation
-      .alpha(0.35)
-      .restart();
+    collideWithPointer();
+
+    draw();
+
   }
 
 
@@ -643,75 +942,112 @@
 
   function pointerMoved(event) {
 
-    const rect =
-      canvas.getBoundingClientRect();
-
-
-    const newX =
-      event.clientX -
-      rect.left -
-      width / 2;
-
-
-    const newY =
-      event.clientY -
-      rect.top -
-      height / 2;
+    const position =
+      getPointerPosition(
+        event
+      );
 
 
     /* --------------------------------------------------------
-       POINTER VELOCITY
+       CURSOR VELOCITY
        -------------------------------------------------------- */
 
+    let vx =
+      position.x -
+      pointer.x;
+
+
+    let vy =
+      position.y -
+      pointer.y;
+
+
+    /*
+     * Clamp unusual frame jumps.
+     */
+
+    const speed =
+      Math.sqrt(
+        vx * vx +
+        vy * vy
+      );
+
+
     if (
-      previousPointerX !== null &&
-      previousPointerY !== null
+      speed >
+      MAX_POINTER_SPEED
     ) {
 
-      pointerVX =
-        newX -
-        previousPointerX;
+      const scale =
+        MAX_POINTER_SPEED /
+        speed;
 
-      pointerVY =
-        newY -
-        previousPointerY;
 
-    } else {
-
-      pointerVX = 0;
-      pointerVY = 0;
+      vx *= scale;
+      vy *= scale;
 
     }
 
 
+    pointer.previousX =
+      pointer.x;
+
+
+    pointer.previousY =
+      pointer.y;
+
+
+    pointer.x =
+      position.x;
+
+
+    pointer.y =
+      position.y;
+
+
+    pointer.vx =
+      vx;
+
+
+    pointer.vy =
+      vy;
+
+
+    pointer.active =
+      true;
+
+
     /* --------------------------------------------------------
-       UPDATE POSITION
+       IMMEDIATE COLLISION
+
+       Do not wait for D3's next animation frame.
        -------------------------------------------------------- */
 
-    previousPointerX =
-      newX;
-
-    previousPointerY =
-      newY;
-
-
-    pointerX =
-      newX;
-
-    pointerY =
-      newY;
-
-
-    pointerActive = true;
+    collideWithPointer();
 
 
     /* --------------------------------------------------------
-       WAKE PHYSICS IMMEDIATELY
+       WAKE SIMULATION
        -------------------------------------------------------- */
 
     simulation
-      .alpha(0.7)
+
+      .alphaTarget(
+        ACTIVE_ALPHA_TARGET
+      )
+
+      .alpha(
+        Math.max(
+          simulation.alpha(),
+          0.28
+        )
+      )
+
       .restart();
+
+
+    draw();
+
   }
 
 
@@ -721,127 +1057,38 @@
 
   function pointerLeft() {
 
-    pointerActive = false;
+    pointer.active =
+      false;
 
 
-    pointerX = null;
-    pointerY = null;
-
-
-    previousPointerX = null;
-    previousPointerY = null;
-
-
-    pointerVX = 0;
-    pointerVY = 0;
+    pointer.vx = 0;
+    pointer.vy = 0;
 
 
     /*
-     * Give the restoring forces enough energy to bring
-     * displaced particles home quickly.
+     * Return to gentle idle physics.
      */
 
     simulation
-      .alpha(0.55)
+
+      .alphaTarget(
+        IDLE_ALPHA_TARGET
+      )
+
+      .alpha(
+        Math.max(
+          simulation.alpha(),
+          0.16
+        )
+      )
+
       .restart();
-  }
-
-
-  /* ==========================================================
-     TOUCH MOVE
-     ========================================================== */
-
-  function touchMoved(event) {
-
-    if (
-      !event.touches ||
-      !event.touches.length
-    ) {
-
-      return;
-    }
-
-
-    event.preventDefault();
-
-
-    const touch =
-      event.touches[0];
-
-
-    const rect =
-      canvas.getBoundingClientRect();
-
-
-    const newX =
-      touch.clientX -
-      rect.left -
-      width / 2;
-
-
-    const newY =
-      touch.clientY -
-      rect.top -
-      height / 2;
-
-
-    if (
-      previousPointerX !== null &&
-      previousPointerY !== null
-    ) {
-
-      pointerVX =
-        newX -
-        previousPointerX;
-
-      pointerVY =
-        newY -
-        previousPointerY;
-
-    } else {
-
-      pointerVX = 0;
-      pointerVY = 0;
-
-    }
-
-
-    previousPointerX =
-      newX;
-
-    previousPointerY =
-      newY;
-
-
-    pointerX =
-      newX;
-
-    pointerY =
-      newY;
-
-
-    pointerActive = true;
-
-
-    simulation
-      .alpha(0.7)
-      .restart();
-  }
-
-
-  /* ==========================================================
-     TOUCH END
-     ========================================================== */
-
-  function touchEnded() {
-
-    pointerLeft();
 
   }
 
 
   /* ==========================================================
-     RESIZE CANVAS
+     RESIZE
      ========================================================== */
 
   function resizeCanvas() {
@@ -851,19 +1098,18 @@
 
 
     width =
-      rect.width ||
-      window.innerWidth;
+      Math.max(
+        1,
+        rect.width
+      );
 
 
     height =
-      rect.height ||
-      window.innerHeight;
+      Math.max(
+        1,
+        rect.height
+      );
 
-
-    /*
-     * Limit DPR to 2 to avoid unnecessarily expensive
-     * rendering on very high-resolution displays.
-     */
 
     dpr =
       Math.min(
@@ -872,25 +1118,19 @@
       );
 
 
-    /* --------------------------------------------------------
-       PHYSICAL CANVAS SIZE
-       -------------------------------------------------------- */
-
     canvas.width =
       Math.round(
-        width * dpr
+        width *
+        dpr
       );
 
 
     canvas.height =
       Math.round(
-        height * dpr
+        height *
+        dpr
       );
 
-
-    /* --------------------------------------------------------
-       CSS SIZE
-       -------------------------------------------------------- */
 
     canvas.style.width =
       `${width}px`;
@@ -899,10 +1139,6 @@
     canvas.style.height =
       `${height}px`;
 
-
-    /* --------------------------------------------------------
-       HIGH-DPI SCALING
-       -------------------------------------------------------- */
 
     ctx.setTransform(
       dpr,
@@ -915,6 +1151,7 @@
 
 
     draw();
+
   }
 
 
@@ -927,6 +1164,7 @@
     return window.matchMedia(
       "(prefers-reduced-motion: reduce)"
     ).matches;
+
   }
 
 
@@ -936,42 +1174,33 @@
 
   function init() {
 
-
-    /* --------------------------------------------------------
-       SIZE CANVAS FIRST
-       -------------------------------------------------------- */
-
     resizeCanvas();
 
 
-    /* --------------------------------------------------------
-       CREATE ALREADY-CENTRED PARTICLES
-       -------------------------------------------------------- */
+    /*
+     * Generate the broad starting cloud.
+     */
 
     createNodes();
 
 
-    /* --------------------------------------------------------
-       BUILD PHYSICS
-       -------------------------------------------------------- */
+    /*
+     * Settle it invisibly and start physics.
+     */
 
     createSimulation();
 
-
-    /* --------------------------------------------------------
-       REDUCED MOTION
-
-       Keep the packed visualization but don't add pointer
-       interaction when reduced motion is requested.
-       -------------------------------------------------------- */
 
     if (
       prefersReducedMotion()
     ) {
 
+      simulation.stop();
+
       draw();
 
       return;
+
     }
 
 
@@ -1001,38 +1230,17 @@
 
 
     /* --------------------------------------------------------
-       TOUCH EVENTS
-       -------------------------------------------------------- */
-
-    canvas.addEventListener(
-      "touchmove",
-      touchMoved,
-      {
-        passive: false
-      }
-    );
-
-
-    canvas.addEventListener(
-      "touchend",
-      touchEnded
-    );
-
-
-    canvas.addEventListener(
-      "touchcancel",
-      touchEnded
-    );
-
-
-    /* --------------------------------------------------------
-       RESPONSIVE RESIZE
+       RESIZE
        -------------------------------------------------------- */
 
     window.addEventListener(
       "resize",
-      resizeCanvas
+      resizeCanvas,
+      {
+        passive: true
+      }
     );
+
   }
 
 
