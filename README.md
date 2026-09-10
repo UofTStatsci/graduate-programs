@@ -11,7 +11,7 @@ Static, template-free GitHub Pages site based on the Department of Statistical S
 No build process is required.
 
 ## Alumni map data
-`assets/data/alumni-locations.json` currently contains demonstration locations. Replace these with **aggregated/derived** coordinates from alumni postal codes; do not publish source postal codes.
+`assets/data/alumni-locations.json` currently contains demonstration cities. Replace these with **aggregated/derived** coordinates from alumni locations.
 
 Format:
 ```json
@@ -22,7 +22,7 @@ Format:
 The site loads D3 v7 and topojson-client from jsDelivr. Geographic land data is packaged locally.
 
 ## Notes
-- Full-page behavior uses native CSS scroll snap rather than fullPage.js.
+- Full-page behaviour uses native CSS scroll snap rather than fullPage.js.
 - The cover collision canvas is adapted to standard browser JavaScript from the supplied D3/Observable concept and uses white particles.
 - Replace the temporary text-based logo lockup with approved U of T / Statistical Sciences logo assets before production if desired.
 
