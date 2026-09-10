@@ -41,7 +41,7 @@
      CONFIGURATION
      ========================================================== */
 
-  const PARTICLE_COUNT = 150;
+  const PARTICLE_COUNT = 300;
 
   const MIN_RADIUS = 5;
   const MAX_RADIUS = 16;
