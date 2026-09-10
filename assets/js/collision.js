@@ -39,7 +39,7 @@
      CONFIGURATION
      ========================================================== */
 
-  const PARTICLE_COUNT = 200;
+  const PARTICLE_COUNT = 150;
 
   /*
    * Particle sizes.
@@ -56,7 +56,7 @@
    *
    * This controls the spacing of that initial cluster.
    */
-  const INITIAL_SPACING = 2;
+  const INITIAL_SPACING = 14;
 
 
   /*
