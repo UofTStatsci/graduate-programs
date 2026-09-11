@@ -1,22 +1,17 @@
 /* ==========================================================
    U of T Statistical Sciences
-   Alumni Globe
-
-   Interactive orthographic globe showing alumni cities.
+   Alumni Country Globe
 
    Behaviour:
-   - White globe on dark blue background
-   - Pale blue land
-   - U of T blue alumni nodes and connections
-   - Toronto is the origin
-   - One connection per city
-   - Connection weight reflects alumni count
-   - City size reflects alumni count
+   - White interactive orthographic globe
+   - One point per country
+   - One connection from Toronto per country
+   - Point size reflects alumni count
+   - Arc weight reflects alumni count
+   - 12K+ Alumni / 47 Countries / 212+ Destinations
+   - Slow automatic rotation when idle
    - Drag to rotate
-   - Hover to explore city totals
-   - Slowly auto-rotates when idle
-   - Auto-rotation pauses during interaction
-   - Globe still renders if alumni-cities.json is unavailable
+   - Hover pauses rotation and shows country + alumni count
    ========================================================== */
 
 (() => {
@@ -78,13 +73,13 @@
       "rgba(1,128,165,0.55)",
 
     graticule:
-      "rgba(1,128,165,0.18)",
+      "rgba(1,128,165,0.16)",
 
     arcMinimum:
-      0.16,
+      0.18,
 
     arcMaximum:
-      0.78
+      0.82
 
   };
 
@@ -116,15 +111,13 @@
 
   let land = null;
 
-  let alumni = [];
+  let countries = [];
 
-  let hoveredCity = null;
+  let hoveredCountry = null;
 
 
   /*
-   * Initial globe orientation.
-   *
-   * North America is prominent on load.
+   * Start with North America visible.
    */
 
   let rotation = [
@@ -138,36 +131,39 @@
      AUTO ROTATION
      ========================================================== */
 
-  let autoRotate = true;
+  let autoRotate =
+    true;
 
-  let isDragging = false;
+  let isDragging =
+    false;
 
-  let animationFrame = null;
+  let animationFrame =
+    null;
 
-  let lastFrameTime = null;
+  let lastFrameTime =
+    null;
 
 
   /*
    * Degrees per second.
-   *
-   * A complete revolution takes roughly 2 minutes 44 seconds.
    */
 
-  const AUTO_ROTATE_SPEED = 2.2;
+  const AUTO_ROTATE_SPEED =
+    2.2;
 
 
   /* ==========================================================
      DATA SCALES
      ========================================================== */
 
-  let cityRadiusScale =
-    () => 4;
+  let countryRadiusScale =
+    () => 5;
 
   let arcWidthScale =
-    () => 0.75;
+    () => 1;
 
   let arcOpacityScale =
-    () => 0.3;
+    () => 0.4;
 
 
   /* ==========================================================
@@ -191,19 +187,14 @@
 
 
   /* ==========================================================
-     LOAD WORLD DATA
-
-     World data is REQUIRED.
-
-     Alumni data is OPTIONAL so that the globe can still
-     render while alumni-cities.json is unavailable.
+     LOAD DATA
      ========================================================== */
 
   async function loadData() {
 
 
     /* --------------------------------------------------------
-       WORLD DATA
+       WORLD LAND
        -------------------------------------------------------- */
 
     const worldResponse =
@@ -233,32 +224,32 @@
 
 
     /* --------------------------------------------------------
-       ALUMNI CITY DATA
+       ALUMNI COUNTRIES
        -------------------------------------------------------- */
 
     try {
 
-      const alumniResponse =
+      const countryResponse =
         await fetch(
-          "assets/data/alumni-cities.json"
+          "assets/data/alumni-countries.json"
         );
 
 
-      if (!alumniResponse.ok) {
+      if (!countryResponse.ok) {
 
         throw new Error(
-          "alumni-cities.json not found"
+          "alumni-countries.json not found"
         );
 
       }
 
 
-      const alumniData =
-        await alumniResponse.json();
+      const countryData =
+        await countryResponse.json();
 
 
-      alumni =
-        alumniData
+      countries =
+        countryData
 
           .filter(
             d =>
@@ -273,7 +264,8 @@
           .map(
             d => ({
 
-              ...d,
+              country:
+                d.country,
 
               longitude:
                 Number(d.longitude),
@@ -292,19 +284,24 @@
 
 
       console.log(
-        `Alumni globe: loaded ${alumni.length} city locations.`
+        `Alumni globe: loaded ${countries.length} countries.`
       );
 
 
     } catch (error) {
 
+      /*
+       * Earth still renders if the country data
+       * hasn't been added yet.
+       */
+
       console.warn(
-        "Alumni city data is not available yet. Rendering globe without alumni connections.",
+        "Alumni country data unavailable. Rendering globe without alumni locations.",
         error
       );
 
 
-      alumni = [];
+      countries = [];
 
     }
 
@@ -321,18 +318,18 @@
 
   function configureDataScales() {
 
-    if (!alumni.length) {
+    if (!countries.length) {
 
-      cityRadiusScale =
-        () => 4;
+      countryRadiusScale =
+        () => 5;
 
 
       arcWidthScale =
-        () => 0.75;
+        () => 1;
 
 
       arcOpacityScale =
-        () => 0.3;
+        () => 0.4;
 
 
       return;
@@ -341,24 +338,20 @@
 
     const maxCount =
       d3.max(
-        alumni,
+        countries,
         d => d.count
       ) || 1;
 
 
     /* --------------------------------------------------------
-       City radius
+       Country point size
 
-       Increased substantially from the previous version.
-
-       Smallest city:
-       approximately 3.5px
-
-       Largest city:
-       approximately 12px
+       Points are intentionally larger than the previous
+       city-level version because there are far fewer
+       locations on the globe.
        -------------------------------------------------------- */
 
-    cityRadiusScale =
+    countryRadiusScale =
       d3
         .scaleSqrt()
 
@@ -371,8 +364,8 @@
         ])
 
         .range([
-          3.5,
-          12
+          5,
+          16
         ])
 
         .clamp(true);
@@ -395,8 +388,8 @@
         ])
 
         .range([
-          0.55,
-          2.8
+          0.75,
+          3.2
         ])
 
         .clamp(true);
@@ -429,7 +422,7 @@
 
 
   /* ==========================================================
-     ALUMNI STATS
+     FIXED STATISTICS
      ========================================================== */
 
   function updateStats() {
@@ -451,11 +444,11 @@
 
 
     /*
-     * 12K+ represents the department's entire worldwide
-     * alumni community.
-     *
-     * It intentionally does NOT change to the number of
-     * alumni currently represented in alumni-cities.json.
+     * These are presentation statistics for the
+     * overall alumni community.
+
+     * They are intentionally independent of how many
+     * records are currently represented in the JSON.
      */
 
     if (alumniElement) {
@@ -466,34 +459,17 @@
     }
 
 
-    if (!alumni.length) {
+    /*
+     * We retain the existing ID so index.html does not
+     * need structural changes.
 
-      if (cityElement) {
-        cityElement.textContent = "—";
-      }
-
-      if (countryElement) {
-        countryElement.textContent = "—";
-      }
-
-      return;
-    }
-
-
-    const countries =
-      new Set(
-        alumni
-          .map(
-            d => d.country
-          )
-          .filter(Boolean)
-      );
-
+     * It now displays Destinations.
+     */
 
     if (cityElement) {
 
       cityElement.textContent =
-        alumni.length.toLocaleString();
+        "212+";
 
     }
 
@@ -501,7 +477,7 @@
     if (countryElement) {
 
       countryElement.textContent =
-        countries.size.toLocaleString();
+        "47";
 
     }
 
@@ -609,7 +585,9 @@
 
 
     if (!center) {
+
       return false;
+
     }
 
 
@@ -627,43 +605,56 @@
 
 
   /* ==========================================================
-     TORONTO CHECK
+     CANADA CHECK
      ========================================================== */
 
-  function isToronto(
-    city
+  function isCanada(
+    country
   ) {
 
+    const name =
+      String(
+        country.country || ""
+      )
+        .trim()
+        .toLowerCase();
+
+
     return (
-      Math.abs(
-        city.longitude -
-        TORONTO.coordinates[0]
-      ) < 0.05
-      &&
-      Math.abs(
-        city.latitude -
-        TORONTO.coordinates[1]
-      ) < 0.05
+      name === "canada" ||
+      name === "ca"
     );
   }
 
 
   /* ==========================================================
-     DRAW PARABOLIC CONNECTION
+     DRAW TORONTO → COUNTRY ARC
      ========================================================== */
 
   function drawArc(
     destination
   ) {
 
+    /*
+     * Canada gets a country point, but no Toronto → Canada
+     * arc because Toronto itself is already in Canada.
+     */
+
     if (
-      isToronto(
+      isCanada(
         destination
       )
     ) {
+
       return;
+
     }
 
+
+    /*
+     * Only draw destination arcs while that country
+     * is on the visible hemisphere.
+     */
 
     if (
       !isVisible(
@@ -671,7 +662,9 @@
         destination.latitude
       )
     ) {
+
       return;
+
     }
 
 
@@ -701,9 +694,15 @@
       !projectedStart ||
       !projectedEnd
     ) {
+
       return;
+
     }
 
+
+    /* --------------------------------------------------------
+       Geographic interpolation
+       -------------------------------------------------------- */
 
     const interpolate =
       d3.geoInterpolate(
@@ -713,7 +712,7 @@
 
 
     const steps =
-      50;
+      60;
 
 
     const points =
@@ -729,6 +728,10 @@
             )
         );
 
+
+    /* --------------------------------------------------------
+       Arc height
+       -------------------------------------------------------- */
 
     const dx =
       projectedEnd[0] -
@@ -749,10 +752,14 @@
 
     const lift =
       Math.min(
-        105,
-        screenDistance * 0.22
+        120,
+        screenDistance * 0.24
       );
 
+
+    /* --------------------------------------------------------
+       Draw
+       -------------------------------------------------------- */
 
     context.beginPath();
 
@@ -771,6 +778,10 @@
         points[i];
 
 
+      /*
+       * Clip arc segments behind the globe.
+       */
+
       if (
         !isVisible(
           geographicPoint[0],
@@ -782,6 +793,7 @@
           false;
 
         continue;
+
       }
 
 
@@ -792,7 +804,9 @@
 
 
       if (!point) {
+
         continue;
+
       }
 
 
@@ -800,6 +814,14 @@
         i /
         (points.length - 1);
 
+
+      /*
+       * Parabolic elevation.
+
+       * 0 at origin
+       * 1 at midpoint
+       * 0 at destination
+       */
 
       const arcHeight =
         4 *
@@ -840,8 +862,12 @@
     }
 
 
+    /* --------------------------------------------------------
+       Alumni-count styling
+       -------------------------------------------------------- */
+
     const highlighted =
-      hoveredCity === destination;
+      hoveredCountry === destination;
 
 
     const count =
@@ -872,8 +898,8 @@
     context.lineWidth =
       highlighted
         ? Math.max(
-            2.5,
-            lineWidth + 1
+            3,
+            lineWidth + 1.25
           )
         : lineWidth;
 
@@ -883,51 +909,52 @@
 
 
   /* ==========================================================
-     DRAW CITY NODE
+     DRAW COUNTRY POINT
      ========================================================== */
 
-  function drawCity(
-    city
+  function drawCountry(
+    country
   ) {
 
     if (
       !isVisible(
-        city.longitude,
-        city.latitude
+        country.longitude,
+        country.latitude
       )
     ) {
+
       return;
+
     }
 
 
     const point =
       projection([
-        city.longitude,
-        city.latitude
+        country.longitude,
+        country.latitude
       ]);
 
 
     if (!point) {
+
       return;
+
     }
 
 
-    const count =
-      Math.max(
-        1,
-        city.count
-      );
-
-
     const radius =
-      cityRadiusScale(
-        count
+      countryRadiusScale(
+        country.count
       );
 
 
     const highlighted =
-      hoveredCity === city;
+      hoveredCountry === country;
 
+
+    /* --------------------------------------------------------
+       Optional halo
+       -------------------------------------------------------- */
 
     context.beginPath();
 
@@ -937,7 +964,36 @@
       point[1],
 
       highlighted
-        ? radius + 2.5
+        ? radius + 6
+        : radius + 3,
+
+      0,
+      Math.PI * 2
+    );
+
+
+    context.fillStyle =
+      highlighted
+        ? "rgba(1,128,165,0.18)"
+        : "rgba(1,128,165,0.10)";
+
+
+    context.fill();
+
+
+    /* --------------------------------------------------------
+       Main point
+       -------------------------------------------------------- */
+
+    context.beginPath();
+
+
+    context.arc(
+      point[0],
+      point[1],
+
+      highlighted
+        ? radius + 2
         : radius,
 
       0,
@@ -952,14 +1008,18 @@
     context.fill();
 
 
+    /* --------------------------------------------------------
+       White outline
+       -------------------------------------------------------- */
+
     context.strokeStyle =
       COLORS.ocean;
 
 
     context.lineWidth =
       highlighted
-        ? 2
-        : 0.8;
+        ? 2.5
+        : 1.25;
 
 
     context.stroke();
@@ -967,7 +1027,7 @@
 
 
   /* ==========================================================
-     DRAW TORONTO
+     DRAW TORONTO ORIGIN
      ========================================================== */
 
   function drawToronto() {
@@ -978,7 +1038,9 @@
         TORONTO.coordinates[1]
       )
     ) {
+
       return;
+
     }
 
 
@@ -989,9 +1051,38 @@
 
 
     if (!toronto) {
+
       return;
+
     }
 
+
+    /* --------------------------------------------------------
+       Halo
+       -------------------------------------------------------- */
+
+    context.beginPath();
+
+
+    context.arc(
+      toronto[0],
+      toronto[1],
+      14,
+      0,
+      Math.PI * 2
+    );
+
+
+    context.fillStyle =
+      "rgba(1,128,165,0.15)";
+
+
+    context.fill();
+
+
+    /* --------------------------------------------------------
+       Origin
+       -------------------------------------------------------- */
 
     context.beginPath();
 
@@ -1023,6 +1114,10 @@
     context.stroke();
 
 
+    /* --------------------------------------------------------
+       Inner point
+       -------------------------------------------------------- */
+
     context.beginPath();
 
 
@@ -1050,7 +1145,9 @@
   function draw() {
 
     if (!land) {
+
       return;
+
     }
 
 
@@ -1067,9 +1164,9 @@
     );
 
 
-    /* --------------------------------------------------------
-       White sphere
-       -------------------------------------------------------- */
+    /* ========================================================
+       WHITE SPHERE
+       ======================================================== */
 
     context.beginPath();
 
@@ -1086,9 +1183,9 @@
     context.fill();
 
 
-    /* --------------------------------------------------------
-       Land
-       -------------------------------------------------------- */
+    /* ========================================================
+       LAND
+       ======================================================== */
 
     context.beginPath();
 
@@ -1116,9 +1213,9 @@
     context.stroke();
 
 
-    /* --------------------------------------------------------
-       Graticule
-       -------------------------------------------------------- */
+    /* ========================================================
+       GRATICULE
+       ======================================================== */
 
     context.beginPath();
 
@@ -1139,48 +1236,48 @@
     context.stroke();
 
 
-    /* --------------------------------------------------------
-       Connections
-       -------------------------------------------------------- */
+    /* ========================================================
+       COUNTRY CONNECTIONS
+       ======================================================== */
 
     for (
-      const city
-      of alumni
+      const country
+      of countries
     ) {
 
       drawArc(
-        city
+        country
       );
 
     }
 
 
-    /* --------------------------------------------------------
-       City nodes
-       -------------------------------------------------------- */
+    /* ========================================================
+       COUNTRY POINTS
+       ======================================================== */
 
     for (
-      const city
-      of alumni
+      const country
+      of countries
     ) {
 
-      drawCity(
-        city
+      drawCountry(
+        country
       );
 
     }
 
 
-    /* --------------------------------------------------------
-       Toronto
-       -------------------------------------------------------- */
+    /* ========================================================
+       TORONTO
+       ======================================================== */
 
     drawToronto();
 
 
-    /* --------------------------------------------------------
-       Globe outline
-       -------------------------------------------------------- */
+    /* ========================================================
+       GLOBE EDGE
+       ======================================================== */
 
     context.beginPath();
 
@@ -1203,7 +1300,7 @@
 
 
   /* ==========================================================
-     AUTO ROTATION LOOP
+     AUTO ROTATION
      ========================================================== */
 
   function animate(
@@ -1220,11 +1317,6 @@
     }
 
 
-    /*
-     * Cap delta so returning to the browser tab doesn't
-     * cause the globe to suddenly jump.
-     */
-
     const delta =
       Math.min(
         50,
@@ -1237,25 +1329,16 @@
       timestamp;
 
 
-    /*
-     * Slowly rotate only when the visitor isn't actively
-     * interacting with the visualization.
-     */
-
     if (
       autoRotate &&
       !isDragging &&
-      !hoveredCity
+      !hoveredCountry
     ) {
 
       rotation[0] +=
         AUTO_ROTATE_SPEED *
         (delta / 1000);
 
-
-      /*
-       * Prevent longitude from growing indefinitely.
-       */
 
       if (
         rotation[0] > 360
@@ -1273,7 +1356,6 @@
 
 
       draw();
-
     }
 
 
@@ -1293,10 +1375,6 @@
       .drag()
 
 
-      /* ------------------------------------------------------
-         Start
-         ------------------------------------------------------ */
-
       .on(
         "start",
         () => {
@@ -1315,10 +1393,6 @@
         }
       )
 
-
-      /* ------------------------------------------------------
-         Rotate
-         ------------------------------------------------------ */
 
       .on(
         "drag",
@@ -1349,7 +1423,7 @@
           );
 
 
-          hoveredCity =
+          hoveredCountry =
             null;
 
 
@@ -1361,10 +1435,6 @@
         }
       )
 
-
-      /* ------------------------------------------------------
-         End
-         ------------------------------------------------------ */
 
       .on(
         "end",
@@ -1378,10 +1448,6 @@
             true;
 
 
-          /*
-           * Reset timing so the globe resumes smoothly.
-           */
-
           lastFrameTime =
             null;
 
@@ -1394,15 +1460,17 @@
 
 
   /* ==========================================================
-     POINTER / CITY HOVER
+     COUNTRY HOVER
      ========================================================== */
 
   function pointerMoved(
     event
   ) {
 
-    if (!alumni.length) {
+    if (!countries.length) {
+
       return;
+
     }
 
 
@@ -1429,29 +1497,33 @@
 
 
     for (
-      const city
-      of alumni
+      const country
+      of countries
     ) {
 
       if (
         !isVisible(
-          city.longitude,
-          city.latitude
+          country.longitude,
+          country.latitude
         )
       ) {
+
         continue;
+
       }
 
 
       const point =
         projection([
-          city.longitude,
-          city.latitude
+          country.longitude,
+          country.latitude
         ]);
 
 
       if (!point) {
+
         continue;
+
       }
 
 
@@ -1472,28 +1544,22 @@
         );
 
 
-      /*
-       * Larger visible nodes receive larger hit targets.
-       */
-
       const hitRadius =
         Math.max(
-          16,
-          cityRadiusScale(
-            city.count
-          ) + 8
+          18,
+          countryRadiusScale(
+            country.count
+          ) + 9
         );
 
 
       if (
-        distance <
-        hitRadius &&
-        distance <
-        closestDistance
+        distance < hitRadius &&
+        distance < closestDistance
       ) {
 
         closest =
-          city;
+          country;
 
 
         closestDistance =
@@ -1504,14 +1570,9 @@
     }
 
 
-    hoveredCity =
+    hoveredCountry =
       closest;
 
-
-    /*
-     * Pause the ambient rotation while the visitor
-     * is examining a city.
-     */
 
     if (closest) {
 
@@ -1547,31 +1608,20 @@
      ========================================================== */
 
   function showTooltip(
-    city,
+    country,
     x,
     y
   ) {
 
-    const locationParts = [
-
-      city.city,
-
-      city.province,
-
-      city.country
-
-    ].filter(Boolean);
-
-
     tooltip.innerHTML =
       `
         <strong>
-          ${locationParts.join(", ")}
+          ${country.country}
         </strong>
 
         <span>
-          ${city.count.toLocaleString()}
-          ${city.count === 1
+          ${country.count.toLocaleString()}
+          ${country.count === 1
             ? " alumnus"
             : " alumni"}
         </span>
@@ -1611,7 +1661,7 @@
 
 
   /* ==========================================================
-     RESIZE HANDLING
+     RESIZE
      ========================================================== */
 
   let resizeTimer =
@@ -1653,22 +1703,14 @@
 
     try {
 
-      /* ------------------------------------------------------
-         Load geographic data
-         ------------------------------------------------------ */
-
       await loadData();
 
-
-      /* ------------------------------------------------------
-         Initial render
-         ------------------------------------------------------ */
 
       resize();
 
 
       /* ------------------------------------------------------
-         Drag interaction
+         Drag
          ------------------------------------------------------ */
 
       d3
@@ -1680,7 +1722,7 @@
 
 
       /* ------------------------------------------------------
-         Hover interaction
+         Hover
          ------------------------------------------------------ */
 
       canvas.addEventListener(
@@ -1693,7 +1735,7 @@
         "pointerleave",
         () => {
 
-          hoveredCity =
+          hoveredCountry =
             null;
 
 
@@ -1715,7 +1757,7 @@
 
 
       /* ------------------------------------------------------
-         Responsive resizing
+         Resize
          ------------------------------------------------------ */
 
       window.addEventListener(
@@ -1729,8 +1771,6 @@
 
       /* ------------------------------------------------------
          Ambient rotation
-
-         Respect the visitor's reduced-motion preference.
          ------------------------------------------------------ */
 
       if (
