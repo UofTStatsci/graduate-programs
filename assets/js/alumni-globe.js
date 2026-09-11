@@ -2,16 +2,19 @@
    U of T Statistical Sciences
    Alumni Globe
 
-   Interactive orthographic globe with connections
-   from Toronto to alumni cities.
+   Interactive orthographic globe showing alumni cities.
 
-   Visual treatment:
-   - White globe
+   Behaviour:
+   - White globe on dark blue background
    - Pale blue land
-   - U of T blue geographic details
-   - Blue alumni nodes and arcs
+   - U of T blue alumni nodes and connections
+   - Toronto is the origin
+   - One connection per city
+   - Connection weight reflects alumni count
+   - City size reflects alumni count
    - Drag to rotate
-   - Hover cities for alumni counts
+   - Hover to explore city totals
+   - Globe still renders if alumni-cities.json is unavailable
    ========================================================== */
 
 (() => {
@@ -38,6 +41,7 @@
     typeof d3 === "undefined" ||
     typeof topojson === "undefined"
   ) {
+
     console.warn(
       "Alumni globe: required element or library not found."
     );
@@ -74,11 +78,11 @@
     graticule:
       "rgba(1,128,165,0.18)",
 
-    arc:
-      "rgba(1,128,165,0.42)",
+    arcMinimum:
+      0.16,
 
-    arcHover:
-      "rgba(1,128,165,1)"
+    arcMaximum:
+      0.78
 
   };
 
@@ -116,10 +120,9 @@
 
 
   /*
-   * Initial globe rotation.
+   * Initial globe orientation.
    *
-   * Positions North America prominently when the
-   * visualization first loads.
+   * North America is prominent on load.
    */
 
   let rotation = [
@@ -127,6 +130,20 @@
     -28,
     0
   ];
+
+
+  /* ==========================================================
+     DATA SCALES
+     ========================================================== */
+
+  let cityRadiusScale =
+    () => 2;
+
+  let arcWidthScale =
+    () => 0.75;
+
+  let arcOpacityScale =
+    () => 0.3;
 
 
   /* ==========================================================
@@ -150,142 +167,267 @@
 
 
   /* ==========================================================
-     LOAD DATA
+     LOAD WORLD DATA
+
+     World data is REQUIRED.
+
+     Alumni data is OPTIONAL so that the globe can still
+     render while alumni-cities.json is being developed.
      ========================================================== */
 
-async function loadData() {
-
-  /* ========================================================
-     WORLD DATA — REQUIRED
-     ======================================================== */
-
-  const worldResponse =
-    await fetch(
-      "assets/data/land-110m.json"
-    );
-
-  if (!worldResponse.ok) {
-
-    throw new Error(
-      "Unable to load assets/data/land-110m.json"
-    );
-
-  }
-
-  const worldData =
-    await worldResponse.json();
+  async function loadData() {
 
 
-  land =
-    topojson.feature(
-      worldData,
-      worldData.objects.land
-    );
+    /* --------------------------------------------------------
+       WORLD DATA
+       -------------------------------------------------------- */
 
-
-  /* ========================================================
-     ALUMNI DATA — OPTIONAL
-
-     The globe should still render even if alumni-cities.json
-     has not been created yet.
-     ======================================================== */
-
-  try {
-
-    const alumniResponse =
+    const worldResponse =
       await fetch(
-        "assets/data/alumni-cities.json"
+        "assets/data/land-110m.json"
       );
 
 
-    if (!alumniResponse.ok) {
+    if (!worldResponse.ok) {
 
       throw new Error(
-        "alumni-cities.json not found"
+        "Unable to load assets/data/land-110m.json"
       );
 
     }
 
 
-    const alumniData =
-      await alumniResponse.json();
+    const worldData =
+      await worldResponse.json();
 
 
-    alumni =
-      alumniData
+    land =
+      topojson.feature(
+        worldData,
+        worldData.objects.land
+      );
 
-        .filter(
-          d =>
-            Number.isFinite(
-              Number(d.longitude)
-            ) &&
-            Number.isFinite(
-              Number(d.latitude)
-            )
-        )
 
-        .map(
-          d => ({
+    /* --------------------------------------------------------
+       ALUMNI CITY DATA
+       -------------------------------------------------------- */
 
-            ...d,
+    try {
 
-            longitude:
-              Number(d.longitude),
-
-            latitude:
-              Number(d.latitude),
-
-            count:
-              Number(d.count) || 0
-
-          })
+      const alumniResponse =
+        await fetch(
+          "assets/data/alumni-cities.json"
         );
 
 
-  } catch (error) {
+      if (!alumniResponse.ok) {
 
-    /*
-     * IMPORTANT:
-     *
-     * Missing alumni data should NOT prevent the
-     * globe itself from appearing.
-     */
+        throw new Error(
+          "alumni-cities.json not found"
+        );
 
-    console.warn(
-      "Alumni city data is not available yet. Rendering globe without alumni connections.",
-      error
-    );
+      }
 
-    alumni = [];
 
+      const alumniData =
+        await alumniResponse.json();
+
+
+      alumni =
+        alumniData
+
+          .filter(
+            d =>
+              Number.isFinite(
+                Number(d.longitude)
+              ) &&
+              Number.isFinite(
+                Number(d.latitude)
+              )
+          )
+
+          .map(
+            d => ({
+
+              ...d,
+
+              longitude:
+                Number(d.longitude),
+
+              latitude:
+                Number(d.latitude),
+
+              count:
+                Math.max(
+                  1,
+                  Number(d.count) || 1
+                )
+
+            })
+          );
+
+
+      console.log(
+        `Alumni globe: loaded ${alumni.length} city locations.`
+      );
+
+
+    } catch (error) {
+
+      /*
+       * Missing alumni data should NOT prevent
+       * the globe from appearing.
+       */
+
+      console.warn(
+        "Alumni city data is not available yet. Rendering globe without alumni connections.",
+        error
+      );
+
+
+      alumni = [];
+
+    }
+
+
+    configureDataScales();
+
+    updateStats();
   }
 
 
-  updateStats();
-}
+  /* ==========================================================
+     DATA SCALES
+
+     The alumni distribution will be extremely uneven.
+
+     We therefore avoid linear scaling.
+
+     CITY SIZE:
+     square-root scale
+
+     ARC WIDTH:
+     logarithmic scale
+
+     ARC OPACITY:
+     logarithmic scale
+     ========================================================== */
+
+  function configureDataScales() {
+
+    if (!alumni.length) {
+
+      cityRadiusScale =
+        () => 2;
+
+
+      arcWidthScale =
+        () => 0.75;
+
+
+      arcOpacityScale =
+        () => 0.3;
+
+
+      return;
+    }
+
+
+    const maxCount =
+      d3.max(
+        alumni,
+        d => d.count
+      ) || 1;
+
+
+    /* --------------------------------------------------------
+       City radius
+
+       1 alumnus:
+       approximately 1.6px
+
+       Largest city:
+       approximately 8px
+       -------------------------------------------------------- */
+
+    cityRadiusScale =
+      d3
+        .scaleSqrt()
+
+        .domain([
+          1,
+          Math.max(
+            2,
+            maxCount
+          )
+        ])
+
+        .range([
+          1.6,
+          8
+        ])
+
+        .clamp(true);
+
+
+    /* --------------------------------------------------------
+       Arc width
+
+       Small locations remain visible while major alumni
+       centres receive greater visual weight.
+       -------------------------------------------------------- */
+
+    arcWidthScale =
+      d3
+        .scaleLog()
+
+        .domain([
+          1,
+          Math.max(
+            2,
+            maxCount
+          )
+        ])
+
+        .range([
+          0.55,
+          2.8
+        ])
+
+        .clamp(true);
+
+
+    /* --------------------------------------------------------
+       Arc opacity
+       -------------------------------------------------------- */
+
+    arcOpacityScale =
+      d3
+        .scaleLog()
+
+        .domain([
+          1,
+          Math.max(
+            2,
+            maxCount
+          )
+        ])
+
+        .range([
+          COLORS.arcMinimum,
+          COLORS.arcMaximum
+        ])
+
+        .clamp(true);
+
+  }
+
 
   /* ==========================================================
      ALUMNI STATS
      ========================================================== */
 
   function updateStats() {
-
-    const alumniTotal =
-      d3.sum(
-        alumni,
-        d => d.count
-      );
-
-
-    const countries =
-      new Set(
-        alumni
-          .map(
-            d => d.country
-          )
-          .filter(Boolean)
-      );
-
 
     const alumniElement =
       document.getElementById(
@@ -302,6 +444,47 @@ async function loadData() {
     const countryElement =
       document.getElementById(
         "country-total"
+      );
+
+
+    /*
+     * Until alumni-cities.json exists, retain the
+     * brochure's existing 12K+ figure rather than
+     * replacing it with zero.
+     */
+
+    if (!alumni.length) {
+
+      if (cityElement) {
+        cityElement.textContent = "—";
+      }
+
+
+      if (countryElement) {
+        countryElement.textContent = "—";
+      }
+
+
+      return;
+    }
+
+
+    const alumniTotal =
+      d3.sum(
+        alumni,
+        d => d.count
+      );
+
+
+    const countries =
+      new Set(
+        alumni
+
+          .map(
+            d => d.country
+          )
+
+          .filter(Boolean)
       );
 
 
@@ -386,6 +569,10 @@ async function loadData() {
       `${height}px`;
 
 
+    /* --------------------------------------------------------
+       HiDPI scaling
+       -------------------------------------------------------- */
+
     context.setTransform(
       dpr,
       0,
@@ -397,7 +584,7 @@ async function loadData() {
 
 
     /* --------------------------------------------------------
-       Projection
+       Globe projection
        -------------------------------------------------------- */
 
     projection
@@ -424,9 +611,10 @@ async function loadData() {
 
 
   /* ==========================================================
-     POINT VISIBILITY
+     VISIBILITY
 
-     Determines whether a city is on the visible hemisphere.
+     Returns true when a geographic coordinate is
+     on the visible hemisphere.
      ========================================================== */
 
   function isVisible(
@@ -460,7 +648,37 @@ async function loadData() {
 
 
   /* ==========================================================
-     DRAW CONNECTION ARC
+     TORONTO CHECK
+     ========================================================== */
+
+  function isToronto(
+    city
+  ) {
+
+    return (
+      Math.abs(
+        city.longitude -
+        TORONTO.coordinates[0]
+      ) < 0.05
+      &&
+      Math.abs(
+        city.latitude -
+        TORONTO.coordinates[1]
+      ) < 0.05
+    );
+  }
+
+
+  /* ==========================================================
+     DRAW PARABOLIC CONNECTION
+
+     Each CITY receives one connection.
+
+     We do NOT draw one line per alumnus.
+
+     Alumni count is encoded using:
+     - line width
+     - line opacity
      ========================================================== */
 
   function drawArc(
@@ -468,8 +686,20 @@ async function loadData() {
   ) {
 
     /*
-     * Don't draw an arc if its destination is on
-     * the back side of the globe.
+     * Toronto doesn't need a connection to itself.
+     */
+
+    if (
+      isToronto(
+        destination
+      )
+    ) {
+      return;
+    }
+
+
+    /*
+     * Don't draw destinations on the back hemisphere.
      */
 
     if (
@@ -514,9 +744,6 @@ async function loadData() {
 
     /* --------------------------------------------------------
        Geographic interpolation
-
-       Creates the geographic path between Toronto
-       and the destination.
        -------------------------------------------------------- */
 
     const interpolate =
@@ -535,6 +762,7 @@ async function loadData() {
         .range(
           steps + 1
         )
+
         .map(
           i =>
             interpolate(
@@ -544,7 +772,7 @@ async function loadData() {
 
 
     /* --------------------------------------------------------
-       Determine arc height
+       Determine visual arc height
        -------------------------------------------------------- */
 
     const dx =
@@ -565,7 +793,8 @@ async function loadData() {
 
 
     /*
-     * Longer connections rise higher from the globe.
+     * Longer geographic connections rise farther
+     * from the globe.
      */
 
     const lift =
@@ -576,7 +805,7 @@ async function loadData() {
 
 
     /* --------------------------------------------------------
-       Draw string
+       Build path
        -------------------------------------------------------- */
 
     context.beginPath();
@@ -597,7 +826,7 @@ async function loadData() {
 
 
       /*
-       * Skip portions that pass behind the globe.
+       * Hide sections passing behind the globe.
        */
 
       if (
@@ -631,13 +860,12 @@ async function loadData() {
 
 
       /*
-       * Parabolic curve:
+       * Parabolic lift:
        *
        * 4t(1-t)
        *
-       * t = 0     → 0
-       * t = .5    → 1
-       * t = 1     → 0
+       * = 0 at both endpoints
+       * = 1 at midpoint
        */
 
       const arcHeight =
@@ -679,27 +907,232 @@ async function loadData() {
     }
 
 
-    /* --------------------------------------------------------
-       Arc appearance
-       -------------------------------------------------------- */
+    /* ========================================================
+       COUNT-WEIGHTED ARC STYLE
+       ======================================================== */
 
     const highlighted =
       hoveredCity === destination;
 
 
+    const count =
+      Math.max(
+        1,
+        destination.count
+      );
+
+
+    const lineWidth =
+      arcWidthScale(
+        count
+      );
+
+
+    const opacity =
+      arcOpacityScale(
+        count
+      );
+
+
     context.strokeStyle =
       highlighted
-        ? COLORS.arcHover
-        : COLORS.arc;
+        ? "rgba(1,128,165,1)"
+        : `rgba(1,128,165,${opacity})`;
+
+
+    context.lineWidth =
+      highlighted
+        ? Math.max(
+            2.5,
+            lineWidth + 1
+          )
+        : lineWidth;
+
+
+    context.stroke();
+  }
+
+
+  /* ==========================================================
+     DRAW CITY NODE
+     ========================================================== */
+
+  function drawCity(
+    city
+  ) {
+
+    if (
+      !isVisible(
+        city.longitude,
+        city.latitude
+      )
+    ) {
+      return;
+    }
+
+
+    const point =
+      projection([
+        city.longitude,
+        city.latitude
+      ]);
+
+
+    if (!point) {
+      return;
+    }
+
+
+    const count =
+      Math.max(
+        1,
+        city.count
+      );
+
+
+    /*
+     * Square-root scale keeps major cities prominent
+     * without allowing Toronto/GTA concentrations to
+     * visually overwhelm the globe.
+     */
+
+    const radius =
+      cityRadiusScale(
+        count
+      );
+
+
+    const highlighted =
+      hoveredCity === city;
+
+
+    /* --------------------------------------------------------
+       City circle
+       -------------------------------------------------------- */
+
+    context.beginPath();
+
+
+    context.arc(
+      point[0],
+      point[1],
+
+      highlighted
+        ? radius + 2.5
+        : radius,
+
+      0,
+      Math.PI * 2
+    );
+
+
+    context.fillStyle =
+      COLORS.blue;
+
+
+    context.fill();
+
+
+    /* --------------------------------------------------------
+       White outline
+       -------------------------------------------------------- */
+
+    context.strokeStyle =
+      COLORS.ocean;
 
 
     context.lineWidth =
       highlighted
         ? 2
-        : 0.9;
+        : 0.8;
 
 
     context.stroke();
+  }
+
+
+  /* ==========================================================
+     DRAW TORONTO
+     ========================================================== */
+
+  function drawToronto() {
+
+    if (
+      !isVisible(
+        TORONTO.coordinates[0],
+        TORONTO.coordinates[1]
+      )
+    ) {
+      return;
+    }
+
+
+    const toronto =
+      projection(
+        TORONTO.coordinates
+      );
+
+
+    if (!toronto) {
+      return;
+    }
+
+
+    /* --------------------------------------------------------
+       Outer origin marker
+       -------------------------------------------------------- */
+
+    context.beginPath();
+
+
+    context.arc(
+      toronto[0],
+      toronto[1],
+      7,
+      0,
+      Math.PI * 2
+    );
+
+
+    context.fillStyle =
+      COLORS.darkBlue;
+
+
+    context.fill();
+
+
+    context.strokeStyle =
+      COLORS.blue;
+
+
+    context.lineWidth =
+      2.5;
+
+
+    context.stroke();
+
+
+    /* --------------------------------------------------------
+       Inner marker
+       -------------------------------------------------------- */
+
+    context.beginPath();
+
+
+    context.arc(
+      toronto[0],
+      toronto[1],
+      2.5,
+      0,
+      Math.PI * 2
+    );
+
+
+    context.fillStyle =
+      COLORS.ocean;
+
+
+    context.fill();
   }
 
 
@@ -715,7 +1148,7 @@ async function loadData() {
 
 
     /* --------------------------------------------------------
-       Clear canvas
+       Clear
        -------------------------------------------------------- */
 
     context.clearRect(
@@ -726,17 +1159,13 @@ async function loadData() {
     );
 
 
-    /* --------------------------------------------------------
-       Apply current rotation
-       -------------------------------------------------------- */
-
     projection.rotate(
       rotation
     );
 
 
     /* ========================================================
-       WHITE SPHERE
+       WHITE SPHERE / OCEAN
        ======================================================== */
 
     context.beginPath();
@@ -808,7 +1237,9 @@ async function loadData() {
 
 
     /* ========================================================
-       ALUMNI CONNECTIONS
+       CONNECTIONS
+
+       Draw strings underneath the city dots.
        ======================================================== */
 
     for (
@@ -816,34 +1247,15 @@ async function loadData() {
       of alumni
     ) {
 
-      /*
-       * Don't draw a Toronto → Toronto connection.
-       */
-
-      const isToronto =
-        Math.abs(
-          city.longitude -
-          TORONTO.coordinates[0]
-        ) < 0.05 &&
-        Math.abs(
-          city.latitude -
-          TORONTO.coordinates[1]
-        ) < 0.05;
-
-
-      if (!isToronto) {
-
-        drawArc(
-          city
-        );
-
-      }
+      drawArc(
+        city
+      );
 
     }
 
 
     /* ========================================================
-       ALUMNI CITY DOTS
+       CITY NODES
        ======================================================== */
 
     for (
@@ -851,169 +1263,25 @@ async function loadData() {
       of alumni
     ) {
 
-      if (
-        !isVisible(
-          city.longitude,
-          city.latitude
-        )
-      ) {
-        continue;
-      }
-
-
-      const point =
-        projection([
-          city.longitude,
-          city.latitude
-        ]);
-
-
-      if (!point) {
-        continue;
-      }
-
-
-      /*
-       * Alumni count controls dot size.
-
-       * Square root prevents cities with very large
-       * populations from dominating the globe.
-       */
-
-      const radius =
-        Math.min(
-          7,
-          1.5 +
-          Math.sqrt(
-            city.count
-          ) *
-          0.18
-        );
-
-
-      const highlighted =
-        hoveredCity === city;
-
-
-      context.beginPath();
-
-
-      context.arc(
-        point[0],
-        point[1],
-        highlighted
-          ? radius + 2
-          : radius,
-        0,
-        Math.PI * 2
+      drawCity(
+        city
       );
 
-
-      context.fillStyle =
-        COLORS.blue;
-
-
-      context.fill();
-
-
-      /*
-       * White outline improves separation where many
-       * cities are geographically close together.
-       */
-
-      context.strokeStyle =
-        COLORS.ocean;
-
-
-      context.lineWidth =
-        highlighted
-          ? 2
-          : 0.8;
-
-
-      context.stroke();
     }
 
 
     /* ========================================================
        TORONTO ORIGIN
+
+       Draw after all city nodes so the origin remains
+       visually prominent.
        ======================================================== */
 
-    if (
-      isVisible(
-        TORONTO.coordinates[0],
-        TORONTO.coordinates[1]
-      )
-    ) {
-
-      const toronto =
-        projection(
-          TORONTO.coordinates
-        );
-
-
-      /* ------------------------------------------------------
-         Outer Toronto ring
-         ------------------------------------------------------ */
-
-      context.beginPath();
-
-
-      context.arc(
-        toronto[0],
-        toronto[1],
-        7,
-        0,
-        Math.PI * 2
-      );
-
-
-      context.fillStyle =
-        COLORS.darkBlue;
-
-
-      context.fill();
-
-
-      context.strokeStyle =
-        COLORS.blue;
-
-
-      context.lineWidth =
-        2.5;
-
-
-      context.stroke();
-
-
-      /* ------------------------------------------------------
-         Inner Toronto point
-         ------------------------------------------------------ */
-
-      context.beginPath();
-
-
-      context.arc(
-        toronto[0],
-        toronto[1],
-        2.5,
-        0,
-        Math.PI * 2
-      );
-
-
-      context.fillStyle =
-        COLORS.ocean;
-
-
-      context.fill();
-    }
+    drawToronto();
 
 
     /* ========================================================
-       OUTER GLOBE OUTLINE
-
-       Draw last so the sphere has a crisp edge.
+       OUTER GLOBE EDGE
        ======================================================== */
 
     context.beginPath();
@@ -1046,7 +1314,7 @@ async function loadData() {
 
 
       /* ------------------------------------------------------
-         Drag start
+         Start
          ------------------------------------------------------ */
 
       .on(
@@ -1061,7 +1329,7 @@ async function loadData() {
 
 
       /* ------------------------------------------------------
-         Drag
+         Rotate
          ------------------------------------------------------ */
 
       .on(
@@ -1079,7 +1347,7 @@ async function loadData() {
 
 
           /*
-           * Prevent flipping over the poles.
+           * Prevent pole flipping.
            */
 
           rotation[1] =
@@ -1111,7 +1379,7 @@ async function loadData() {
 
 
       /* ------------------------------------------------------
-         Drag end
+         End
          ------------------------------------------------------ */
 
       .on(
@@ -1126,12 +1394,22 @@ async function loadData() {
 
 
   /* ==========================================================
-     CITY HOVER
+     POINTER / CITY HOVER
      ========================================================== */
 
   function pointerMoved(
     event
   ) {
+
+    /*
+     * No city lookup is necessary if alumni data
+     * hasn't been loaded yet.
+     */
+
+    if (!alumni.length) {
+      return;
+    }
+
 
     const rect =
       canvas.getBoundingClientRect();
@@ -1152,7 +1430,10 @@ async function loadData() {
 
 
     /*
-     * Hover hit area.
+     * Minimum hover target size.
+
+     * Even tiny one-alumnus city nodes remain reasonably
+     * easy to interact with.
      */
 
     let closestDistance =
@@ -1203,9 +1484,27 @@ async function loadData() {
         );
 
 
+      /*
+       * Larger alumni hubs get a slightly larger
+       * interactive hit area.
+       */
+
+      const hitRadius =
+        Math.max(
+          15,
+          cityRadiusScale(
+            city.count
+          ) + 7
+        );
+
+
       if (
         distance <
-        closestDistance
+        closestDistance ||
+        (
+          closest === null &&
+          distance < hitRadius
+        )
       ) {
 
         closest =
@@ -1254,9 +1553,13 @@ async function loadData() {
   ) {
 
     const locationParts = [
+
       city.city,
+
       city.province,
+
       city.country
+
     ].filter(Boolean);
 
 
@@ -1308,6 +1611,29 @@ async function loadData() {
 
 
   /* ==========================================================
+     RESIZE HANDLING
+     ========================================================== */
+
+  let resizeTimer =
+    null;
+
+
+  function handleResize() {
+
+    clearTimeout(
+      resizeTimer
+    );
+
+
+    resizeTimer =
+      setTimeout(
+        resize,
+        100
+      );
+  }
+
+
+  /* ==========================================================
      INITIALIZE
      ========================================================== */
 
@@ -1316,32 +1642,33 @@ async function loadData() {
     try {
 
       /* ------------------------------------------------------
-         Load geographic + alumni data
+         Load geographic data
          ------------------------------------------------------ */
 
       await loadData();
 
 
       /* ------------------------------------------------------
-         Size and draw globe
+         Initial render
          ------------------------------------------------------ */
 
       resize();
 
 
       /* ------------------------------------------------------
-         Enable rotation
+         Drag interaction
          ------------------------------------------------------ */
 
       d3
         .select(canvas)
+
         .call(
           drag
         );
 
 
       /* ------------------------------------------------------
-         City hover
+         Hover interaction
          ------------------------------------------------------ */
 
       canvas.addEventListener(
@@ -1368,12 +1695,12 @@ async function loadData() {
 
 
       /* ------------------------------------------------------
-         Responsive resize
+         Responsive resizing
          ------------------------------------------------------ */
 
       window.addEventListener(
         "resize",
-        resize,
+        handleResize,
         {
           passive: true
         }
