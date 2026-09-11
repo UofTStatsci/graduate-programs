@@ -2,20 +2,18 @@
    U of T Statistical Sciences
    Alumni Destinations Globe
 
-   Simplified visualization.
-
    Behaviour:
-   - Uses the existing working alumni-cities.json
-   - Cities are treated only as anonymous destinations
-   - No city names are displayed
-   - No alumni counts are displayed
-   - No hover cards
-   - All destination points have equal visual weight
+   - Uses alumni-cities.json as anonymous destinations
+   - No city names or alumni counts displayed
+   - Equal-weight destination points
    - One connection per destination
    - Toronto is the origin
    - Slow automatic rotation when idle
    - Drag to rotate
-   - White globe with U of T blue data
+   - Flick / swipe gives the globe momentum
+   - Momentum gradually decays
+   - Touching the globe immediately stops momentum
+   - Ambient rotation resumes after momentum dissipates
    ========================================================== */
 
 (() => {
@@ -27,15 +25,10 @@
      ========================================================== */
 
   const container =
-    document.getElementById(
-      "alumni-globe"
-    );
-
+    document.getElementById("alumni-globe");
 
   const canvas =
-    document.getElementById(
-      "globe-canvas"
-    );
+    document.getElementById("globe-canvas");
 
 
   if (
@@ -91,7 +84,7 @@
 
 
   /* ==========================================================
-     TORONTO ORIGIN
+     TORONTO
      ========================================================== */
 
   const TORONTO = {
@@ -108,10 +101,6 @@
      VISUAL SETTINGS
      ========================================================== */
 
-  /*
-   * Every destination receives the same visual weight.
-   */
-
   const DESTINATION_RADIUS =
     4.25;
 
@@ -124,16 +113,74 @@
     0.9;
 
 
-  /*
-   * Toronto remains more prominent than destination points.
-   */
-
   const TORONTO_RADIUS =
     8;
 
 
   const TORONTO_HALO_RADIUS =
     13;
+
+
+  /* ==========================================================
+     ROTATION SETTINGS
+     ========================================================== */
+
+  /*
+   * Normal idle rotation.
+   *
+   * Degrees per second.
+   */
+
+  const AUTO_ROTATE_SPEED =
+    3.25;
+
+
+  /*
+   * How much pointer movement rotates the globe.
+   */
+
+  const DRAG_SENSITIVITY =
+    0.35;
+
+
+  /*
+   * Momentum retention per 60fps frame.
+   *
+   * Closer to 1 = longer coast.
+   *
+   * 0.94 gives a noticeable but controlled glide.
+   */
+
+  const MOMENTUM_FRICTION =
+    0.94;
+
+
+  /*
+   * Once momentum drops below this value,
+   * return to normal ambient rotation.
+   */
+
+  const MOMENTUM_MINIMUM =
+    0.01;
+
+
+  /*
+   * Prevent extremely violent flicks from spinning
+   * the globe unrealistically fast.
+   */
+
+  const MAX_MOMENTUM =
+    2.8;
+
+
+  /*
+   * Smoothing applied to measured drag velocity.
+   *
+   * Higher = final movement has more influence.
+   */
+
+  const MOMENTUM_SMOOTHING =
+    0.65;
 
 
   /* ==========================================================
@@ -156,7 +203,7 @@
 
 
   /*
-   * Start with North America prominent.
+   * Initial orientation.
    */
 
   let rotation = [
@@ -166,13 +213,36 @@
   ];
 
 
-  /* ==========================================================
-     AUTO ROTATION
-     ========================================================== */
+  /*
+   * Interaction state.
+   */
 
   let isDragging =
     false;
 
+
+  let hasMomentum =
+    false;
+
+
+  /*
+   * Angular momentum.
+   *
+   * X corresponds to longitude.
+   * Y corresponds to latitude.
+   */
+
+  let momentumX =
+    0;
+
+
+  let momentumY =
+    0;
+
+
+  /*
+   * Animation timing.
+   */
 
   let animationFrame =
     null;
@@ -183,13 +253,11 @@
 
 
   /*
-   * Degrees per second.
-   *
-   * Deliberately subtle.
+   * Drag timing.
    */
 
-  const AUTO_ROTATE_SPEED =
-    3.25;
+  let lastDragTime =
+    null;
 
 
   /* ==========================================================
@@ -210,6 +278,51 @@
       projection,
       context
     );
+
+
+  /* ==========================================================
+     HELPERS
+     ========================================================== */
+
+  function clamp(
+    value,
+    minimum,
+    maximum
+  ) {
+
+    return Math.max(
+      minimum,
+      Math.min(
+        maximum,
+        value
+      )
+    );
+  }
+
+
+  function clampLatitude() {
+
+    rotation[1] =
+      clamp(
+        rotation[1],
+        -90,
+        90
+      );
+  }
+
+
+  function normalizeLongitude() {
+
+    if (
+      rotation[0] > 360 ||
+      rotation[0] < -360
+    ) {
+
+      rotation[0] %=
+        360;
+
+    }
+  }
 
 
   /* ==========================================================
@@ -251,14 +364,6 @@
 
     /* --------------------------------------------------------
        Anonymous destinations
-
-       We deliberately ignore:
-       - city name
-       - province
-       - country label
-       - alumni count
-
-       Only coordinates are used by the visualization.
        -------------------------------------------------------- */
 
     try {
@@ -314,10 +419,6 @@
 
 
     } catch (error) {
-
-      /*
-       * Globe still renders without destination data.
-       */
 
       console.warn(
         "Destination data unavailable. Rendering globe without destination points.",
@@ -414,10 +515,6 @@
       );
 
 
-    /* --------------------------------------------------------
-       Canvas resolution
-       -------------------------------------------------------- */
-
     canvas.width =
       Math.round(
         width * dpr
@@ -447,10 +544,6 @@
       0
     );
 
-
-    /* --------------------------------------------------------
-       Globe size
-       -------------------------------------------------------- */
 
     projection
 
@@ -541,10 +634,6 @@
     destination
   ) {
 
-    /*
-     * Don't draw Toronto → Toronto.
-     */
-
     if (
       isToronto(
         destination
@@ -555,10 +644,6 @@
 
     }
 
-
-    /*
-     * Destination must currently be visible.
-     */
 
     if (
       !isVisible(
@@ -604,10 +689,6 @@
     }
 
 
-    /* --------------------------------------------------------
-       Geographic interpolation
-       -------------------------------------------------------- */
-
     const interpolate =
       d3.geoInterpolate(
         start,
@@ -633,10 +714,6 @@
         );
 
 
-    /* --------------------------------------------------------
-       Determine arc height
-       -------------------------------------------------------- */
-
     const dx =
       projectedEnd[0] -
       projectedStart[0];
@@ -661,10 +738,6 @@
       );
 
 
-    /* --------------------------------------------------------
-       Build path
-       -------------------------------------------------------- */
-
     context.beginPath();
 
 
@@ -681,10 +754,6 @@
       const geographicPoint =
         points[i];
 
-
-      /*
-       * Hide portions behind the globe.
-       */
 
       if (
         !isVisible(
@@ -718,10 +787,6 @@
         i /
         (points.length - 1);
 
-
-      /*
-       * Parabolic lift.
-       */
 
       const arcHeight =
         4 *
@@ -760,10 +825,6 @@
       }
     }
 
-
-    /* --------------------------------------------------------
-       Equal-weight connection
-       -------------------------------------------------------- */
 
     context.strokeStyle =
       COLORS.arc;
@@ -856,10 +917,6 @@
 
     context.fill();
 
-
-    /* --------------------------------------------------------
-       White edge
-       -------------------------------------------------------- */
 
     context.strokeStyle =
       COLORS.ocean;
@@ -1011,9 +1068,9 @@
     );
 
 
-    /* ========================================================
-       WHITE SPHERE
-       ======================================================== */
+    /* --------------------------------------------------------
+       White sphere
+       -------------------------------------------------------- */
 
     context.beginPath();
 
@@ -1030,9 +1087,9 @@
     context.fill();
 
 
-    /* ========================================================
-       LAND
-       ======================================================== */
+    /* --------------------------------------------------------
+       Land
+       -------------------------------------------------------- */
 
     context.beginPath();
 
@@ -1060,9 +1117,9 @@
     context.stroke();
 
 
-    /* ========================================================
-       GRATICULE
-       ======================================================== */
+    /* --------------------------------------------------------
+       Graticule
+       -------------------------------------------------------- */
 
     context.beginPath();
 
@@ -1083,9 +1140,9 @@
     context.stroke();
 
 
-    /* ========================================================
-       DESTINATION CONNECTIONS
-       ======================================================== */
+    /* --------------------------------------------------------
+       Destination connections
+       -------------------------------------------------------- */
 
     for (
       const destination
@@ -1099,9 +1156,9 @@
     }
 
 
-    /* ========================================================
-       DESTINATION POINTS
-       ======================================================== */
+    /* --------------------------------------------------------
+       Destination points
+       -------------------------------------------------------- */
 
     for (
       const destination
@@ -1115,16 +1172,16 @@
     }
 
 
-    /* ========================================================
-       TORONTO ORIGIN
-       ======================================================== */
+    /* --------------------------------------------------------
+       Toronto
+       -------------------------------------------------------- */
 
     drawToronto();
 
 
-    /* ========================================================
-       GLOBE EDGE
-       ======================================================== */
+    /* --------------------------------------------------------
+       Globe edge
+       -------------------------------------------------------- */
 
     context.beginPath();
 
@@ -1147,7 +1204,19 @@
 
 
   /* ==========================================================
-     AUTO ROTATION
+     ANIMATION
+
+     Three possible states:
+
+     1. User dragging:
+        animation does not alter rotation.
+
+     2. Momentum:
+        globe continues with the velocity of the last drag
+        and gradually slows down.
+
+     3. Idle:
+        normal automatic rotation.
      ========================================================== */
 
   function animate(
@@ -1177,24 +1246,87 @@
 
 
     /*
-     * Rotate whenever the user isn't dragging.
+     * Convert frame duration to a 60fps multiplier.
+     *
+     * This keeps momentum behaviour similar on 60Hz,
+     * 120Hz and other displays.
      */
 
+    const frameScale =
+      delta /
+      (1000 / 60);
+
+
+    /* ========================================================
+       MOMENTUM
+       ======================================================== */
+
     if (
-      !isDragging
+      !isDragging &&
+      hasMomentum
     ) {
 
       rotation[0] +=
-        AUTO_ROTATE_SPEED *
-        (delta / 1000);
+        momentumX *
+        frameScale;
 
+
+      rotation[1] +=
+        momentumY *
+        frameScale;
+
+
+      clampLatitude();
+
+      normalizeLongitude();
+
+
+      /*
+       * Apply frame-rate-independent friction.
+       */
+
+      const friction =
+        Math.pow(
+          MOMENTUM_FRICTION,
+          frameScale
+        );
+
+
+      momentumX *=
+        friction;
+
+
+      momentumY *=
+        friction;
+
+
+      /*
+       * Once momentum becomes imperceptible,
+       * return to ambient rotation.
+       */
 
       if (
-        rotation[0] > 360
+        Math.abs(
+          momentumX
+        ) <
+        MOMENTUM_MINIMUM
+        &&
+        Math.abs(
+          momentumY
+        ) <
+        MOMENTUM_MINIMUM
       ) {
 
-        rotation[0] -=
-          360;
+        momentumX =
+          0;
+
+
+        momentumY =
+          0;
+
+
+        hasMomentum =
+          false;
 
       }
 
@@ -1205,6 +1337,33 @@
 
 
       draw();
+
+    }
+
+
+    /* ========================================================
+       IDLE AUTO ROTATION
+       ======================================================== */
+
+    else if (
+      !isDragging
+    ) {
+
+      rotation[0] +=
+        AUTO_ROTATE_SPEED *
+        (delta / 1000);
+
+
+      normalizeLongitude();
+
+
+      projection.rotate(
+        rotation
+      );
+
+
+      draw();
+
     }
 
 
@@ -1216,7 +1375,7 @@
 
 
   /* ==========================================================
-     DRAG TO ROTATE
+     DRAG WITH MOMENTUM
      ========================================================== */
 
   const drag =
@@ -1225,7 +1384,9 @@
 
 
       /* ------------------------------------------------------
-         Start
+         GRAB
+
+         Immediately stop any existing momentum.
          ------------------------------------------------------ */
 
       .on(
@@ -1236,6 +1397,22 @@
             true;
 
 
+          hasMomentum =
+            false;
+
+
+          momentumX =
+            0;
+
+
+          momentumY =
+            0;
+
+
+          lastDragTime =
+            performance.now();
+
+
           canvas.style.cursor =
             "grabbing";
 
@@ -1244,34 +1421,126 @@
 
 
       /* ------------------------------------------------------
-         Rotate
+         DRAG
+
+         Rotate globe and continuously measure angular
+         velocity for the eventual release.
          ------------------------------------------------------ */
 
       .on(
         "drag",
         event => {
 
-          rotation[0] +=
-            event.dx *
-            0.35;
-
-
-          rotation[1] -=
-            event.dy *
-            0.35;
+          const now =
+            performance.now();
 
 
           /*
-           * Prevent pole flipping.
+           * Milliseconds since previous drag event.
            */
 
-          rotation[1] =
+          const elapsed =
             Math.max(
-              -90,
-              Math.min(
-                90,
-                rotation[1]
-              )
+              1,
+              now -
+              lastDragTime
+            );
+
+
+          lastDragTime =
+            now;
+
+
+          /*
+           * Convert pointer movement to angular movement.
+           */
+
+          const rotationX =
+            event.dx *
+            DRAG_SENSITIVITY;
+
+
+          const rotationY =
+            -event.dy *
+            DRAG_SENSITIVITY;
+
+
+          rotation[0] +=
+            rotationX;
+
+
+          rotation[1] +=
+            rotationY;
+
+
+          clampLatitude();
+
+          normalizeLongitude();
+
+
+          /*
+           * Normalize drag velocity to approximately
+           * one 60fps frame.
+
+           * This means momentum is based on how FAST
+           * the user moved, not merely how far.
+           */
+
+          const timeScale =
+            (1000 / 60) /
+            elapsed;
+
+
+          const measuredMomentumX =
+            rotationX *
+            timeScale;
+
+
+          const measuredMomentumY =
+            rotationY *
+            timeScale;
+
+
+          /*
+           * Smooth velocity measurements.
+
+           * This prevents one noisy pointer event from
+           * determining the entire release velocity.
+           */
+
+          momentumX =
+            momentumX *
+            (1 - MOMENTUM_SMOOTHING)
+            +
+            measuredMomentumX *
+            MOMENTUM_SMOOTHING;
+
+
+          momentumY =
+            momentumY *
+            (1 - MOMENTUM_SMOOTHING)
+            +
+            measuredMomentumY *
+            MOMENTUM_SMOOTHING;
+
+
+          /*
+           * Cap extreme flicks.
+           */
+
+          momentumX =
+            clamp(
+              momentumX,
+              -MAX_MOMENTUM,
+              MAX_MOMENTUM
+            );
+
+
+          momentumY =
+            clamp(
+              momentumY,
+              -MAX_MOMENTUM,
+              MAX_MOMENTUM
             );
 
 
@@ -1287,7 +1556,9 @@
 
 
       /* ------------------------------------------------------
-         End
+         RELEASE
+
+         Preserve the velocity measured during the drag.
          ------------------------------------------------------ */
 
       .on(
@@ -1299,11 +1570,34 @@
 
 
           /*
-           * Reset frame timing so auto-rotation resumes
-           * without a jump.
+           * Only enter momentum mode if the release
+           * velocity is actually meaningful.
+           */
+
+          hasMomentum =
+            (
+              Math.abs(
+                momentumX
+              ) >=
+              MOMENTUM_MINIMUM
+              ||
+              Math.abs(
+                momentumY
+              ) >=
+              MOMENTUM_MINIMUM
+            );
+
+
+          /*
+           * Reset animation timing so there is no jump
+           * immediately after release.
            */
 
           lastFrameTime =
+            null;
+
+
+          lastDragTime =
             null;
 
 
@@ -1312,6 +1606,30 @@
 
         }
       );
+
+
+  /* ==========================================================
+     STOP MOMENTUM IMMEDIATELY ON POINTER DOWN
+
+     D3 drag start will also do this, but pointerdown makes
+     the response instantaneous even before D3 determines
+     that a drag has begun.
+     ========================================================== */
+
+  function stopMomentum() {
+
+    hasMomentum =
+      false;
+
+
+    momentumX =
+      0;
+
+
+    momentumY =
+      0;
+
+  }
 
 
   /* ==========================================================
@@ -1357,16 +1675,8 @@
 
     try {
 
-      /* ------------------------------------------------------
-         Load world + destination data
-         ------------------------------------------------------ */
-
       await loadData();
 
-
-      /* ------------------------------------------------------
-         Initial render
-         ------------------------------------------------------ */
 
       resize();
 
@@ -1383,6 +1693,20 @@
         );
 
 
+      /*
+       * Touching/grabbing the globe immediately kills
+       * any existing inertia.
+       */
+
+      canvas.addEventListener(
+        "pointerdown",
+        stopMomentum,
+        {
+          passive: true
+        }
+      );
+
+
       /* ------------------------------------------------------
          Resize
          ------------------------------------------------------ */
@@ -1397,7 +1721,7 @@
 
 
       /* ------------------------------------------------------
-         Ambient rotation
+         Animation
          ------------------------------------------------------ */
 
       if (
