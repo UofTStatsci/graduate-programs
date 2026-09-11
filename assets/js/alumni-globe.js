@@ -14,6 +14,8 @@
    - City size reflects alumni count
    - Drag to rotate
    - Hover to explore city totals
+   - Slowly auto-rotates when idle
+   - Auto-rotation pauses during interaction
    - Globe still renders if alumni-cities.json is unavailable
    ========================================================== */
 
@@ -133,11 +135,33 @@
 
 
   /* ==========================================================
+     AUTO ROTATION
+     ========================================================== */
+
+  let autoRotate = true;
+
+  let isDragging = false;
+
+  let animationFrame = null;
+
+  let lastFrameTime = null;
+
+
+  /*
+   * Degrees per second.
+   *
+   * A complete revolution takes roughly 2 minutes 44 seconds.
+   */
+
+  const AUTO_ROTATE_SPEED = 2.2;
+
+
+  /* ==========================================================
      DATA SCALES
      ========================================================== */
 
   let cityRadiusScale =
-    () => 2;
+    () => 4;
 
   let arcWidthScale =
     () => 0.75;
@@ -172,7 +196,7 @@
      World data is REQUIRED.
 
      Alumni data is OPTIONAL so that the globe can still
-     render while alumni-cities.json is being developed.
+     render while alumni-cities.json is unavailable.
      ========================================================== */
 
   async function loadData() {
@@ -274,11 +298,6 @@
 
     } catch (error) {
 
-      /*
-       * Missing alumni data should NOT prevent
-       * the globe from appearing.
-       */
-
       console.warn(
         "Alumni city data is not available yet. Rendering globe without alumni connections.",
         error
@@ -298,19 +317,6 @@
 
   /* ==========================================================
      DATA SCALES
-
-     The alumni distribution will be extremely uneven.
-
-     We therefore avoid linear scaling.
-
-     CITY SIZE:
-     square-root scale
-
-     ARC WIDTH:
-     logarithmic scale
-
-     ARC OPACITY:
-     logarithmic scale
      ========================================================== */
 
   function configureDataScales() {
@@ -318,7 +324,7 @@
     if (!alumni.length) {
 
       cityRadiusScale =
-        () => 2;
+        () => 4;
 
 
       arcWidthScale =
@@ -343,11 +349,13 @@
     /* --------------------------------------------------------
        City radius
 
-       1 alumnus:
-       approximately 1.6px
+       Increased substantially from the previous version.
+
+       Smallest city:
+       approximately 3.5px
 
        Largest city:
-       approximately 8px
+       approximately 12px
        -------------------------------------------------------- */
 
     cityRadiusScale =
@@ -363,8 +371,8 @@
         ])
 
         .range([
-          1.6,
-          8
+          3.5,
+          12
         ])
 
         .clamp(true);
@@ -372,9 +380,6 @@
 
     /* --------------------------------------------------------
        Arc width
-
-       Small locations remain visible while major alumni
-       centres receive greater visual weight.
        -------------------------------------------------------- */
 
     arcWidthScale =
@@ -434,12 +439,10 @@
         "alumni-total"
       );
 
-
     const cityElement =
       document.getElementById(
         "city-total"
       );
-
 
     const countryElement =
       document.getElementById(
@@ -448,10 +451,20 @@
 
 
     /*
-     * Until alumni-cities.json exists, retain the
-     * brochure's existing 12K+ figure rather than
-     * replacing it with zero.
+     * 12K+ represents the department's entire worldwide
+     * alumni community.
+     *
+     * It intentionally does NOT change to the number of
+     * alumni currently represented in alumni-cities.json.
      */
+
+    if (alumniElement) {
+
+      alumniElement.textContent =
+        "12K+";
+
+    }
+
 
     if (!alumni.length) {
 
@@ -459,41 +472,22 @@
         cityElement.textContent = "—";
       }
 
-
       if (countryElement) {
         countryElement.textContent = "—";
       }
-
 
       return;
     }
 
 
-    const alumniTotal =
-      d3.sum(
-        alumni,
-        d => d.count
-      );
-
-
     const countries =
       new Set(
         alumni
-
           .map(
             d => d.country
           )
-
           .filter(Boolean)
       );
-
-
-    if (alumniElement) {
-
-      alumniElement.textContent =
-        alumniTotal.toLocaleString();
-
-    }
 
 
     if (cityElement) {
@@ -545,10 +539,6 @@
       );
 
 
-    /* --------------------------------------------------------
-       Canvas resolution
-       -------------------------------------------------------- */
-
     canvas.width =
       Math.round(
         width * dpr
@@ -569,10 +559,6 @@
       `${height}px`;
 
 
-    /* --------------------------------------------------------
-       HiDPI scaling
-       -------------------------------------------------------- */
-
     context.setTransform(
       dpr,
       0,
@@ -582,10 +568,6 @@
       0
     );
 
-
-    /* --------------------------------------------------------
-       Globe projection
-       -------------------------------------------------------- */
 
     projection
 
@@ -612,9 +594,6 @@
 
   /* ==========================================================
      VISIBILITY
-
-     Returns true when a geographic coordinate is
-     on the visible hemisphere.
      ========================================================== */
 
   function isVisible(
@@ -671,23 +650,11 @@
 
   /* ==========================================================
      DRAW PARABOLIC CONNECTION
-
-     Each CITY receives one connection.
-
-     We do NOT draw one line per alumnus.
-
-     Alumni count is encoded using:
-     - line width
-     - line opacity
      ========================================================== */
 
   function drawArc(
     destination
   ) {
-
-    /*
-     * Toronto doesn't need a connection to itself.
-     */
 
     if (
       isToronto(
@@ -697,10 +664,6 @@
       return;
     }
 
-
-    /*
-     * Don't draw destinations on the back hemisphere.
-     */
 
     if (
       !isVisible(
@@ -742,10 +705,6 @@
     }
 
 
-    /* --------------------------------------------------------
-       Geographic interpolation
-       -------------------------------------------------------- */
-
     const interpolate =
       d3.geoInterpolate(
         start,
@@ -771,10 +730,6 @@
         );
 
 
-    /* --------------------------------------------------------
-       Determine visual arc height
-       -------------------------------------------------------- */
-
     const dx =
       projectedEnd[0] -
       projectedStart[0];
@@ -792,21 +747,12 @@
       );
 
 
-    /*
-     * Longer geographic connections rise farther
-     * from the globe.
-     */
-
     const lift =
       Math.min(
         105,
         screenDistance * 0.22
       );
 
-
-    /* --------------------------------------------------------
-       Build path
-       -------------------------------------------------------- */
 
     context.beginPath();
 
@@ -824,10 +770,6 @@
       const geographicPoint =
         points[i];
 
-
-      /*
-       * Hide sections passing behind the globe.
-       */
 
       if (
         !isVisible(
@@ -858,15 +800,6 @@
         i /
         (points.length - 1);
 
-
-      /*
-       * Parabolic lift:
-       *
-       * 4t(1-t)
-       *
-       * = 0 at both endpoints
-       * = 1 at midpoint
-       */
 
       const arcHeight =
         4 *
@@ -906,10 +839,6 @@
 
     }
 
-
-    /* ========================================================
-       COUNT-WEIGHTED ARC STYLE
-       ======================================================== */
 
     const highlighted =
       hoveredCity === destination;
@@ -990,12 +919,6 @@
       );
 
 
-    /*
-     * Square-root scale keeps major cities prominent
-     * without allowing Toronto/GTA concentrations to
-     * visually overwhelm the globe.
-     */
-
     const radius =
       cityRadiusScale(
         count
@@ -1005,10 +928,6 @@
     const highlighted =
       hoveredCity === city;
 
-
-    /* --------------------------------------------------------
-       City circle
-       -------------------------------------------------------- */
 
     context.beginPath();
 
@@ -1032,10 +951,6 @@
 
     context.fill();
 
-
-    /* --------------------------------------------------------
-       White outline
-       -------------------------------------------------------- */
 
     context.strokeStyle =
       COLORS.ocean;
@@ -1078,17 +993,13 @@
     }
 
 
-    /* --------------------------------------------------------
-       Outer origin marker
-       -------------------------------------------------------- */
-
     context.beginPath();
 
 
     context.arc(
       toronto[0],
       toronto[1],
-      7,
+      9,
       0,
       Math.PI * 2
     );
@@ -1106,15 +1017,11 @@
 
 
     context.lineWidth =
-      2.5;
+      3;
 
 
     context.stroke();
 
-
-    /* --------------------------------------------------------
-       Inner marker
-       -------------------------------------------------------- */
 
     context.beginPath();
 
@@ -1122,7 +1029,7 @@
     context.arc(
       toronto[0],
       toronto[1],
-      2.5,
+      3,
       0,
       Math.PI * 2
     );
@@ -1147,10 +1054,6 @@
     }
 
 
-    /* --------------------------------------------------------
-       Clear
-       -------------------------------------------------------- */
-
     context.clearRect(
       0,
       0,
@@ -1164,9 +1067,9 @@
     );
 
 
-    /* ========================================================
-       WHITE SPHERE / OCEAN
-       ======================================================== */
+    /* --------------------------------------------------------
+       White sphere
+       -------------------------------------------------------- */
 
     context.beginPath();
 
@@ -1183,9 +1086,9 @@
     context.fill();
 
 
-    /* ========================================================
-       LAND
-       ======================================================== */
+    /* --------------------------------------------------------
+       Land
+       -------------------------------------------------------- */
 
     context.beginPath();
 
@@ -1213,9 +1116,9 @@
     context.stroke();
 
 
-    /* ========================================================
-       GRATICULE
-       ======================================================== */
+    /* --------------------------------------------------------
+       Graticule
+       -------------------------------------------------------- */
 
     context.beginPath();
 
@@ -1236,11 +1139,9 @@
     context.stroke();
 
 
-    /* ========================================================
-       CONNECTIONS
-
-       Draw strings underneath the city dots.
-       ======================================================== */
+    /* --------------------------------------------------------
+       Connections
+       -------------------------------------------------------- */
 
     for (
       const city
@@ -1254,9 +1155,9 @@
     }
 
 
-    /* ========================================================
-       CITY NODES
-       ======================================================== */
+    /* --------------------------------------------------------
+       City nodes
+       -------------------------------------------------------- */
 
     for (
       const city
@@ -1270,19 +1171,16 @@
     }
 
 
-    /* ========================================================
-       TORONTO ORIGIN
-
-       Draw after all city nodes so the origin remains
-       visually prominent.
-       ======================================================== */
+    /* --------------------------------------------------------
+       Toronto
+       -------------------------------------------------------- */
 
     drawToronto();
 
 
-    /* ========================================================
-       OUTER GLOBE EDGE
-       ======================================================== */
+    /* --------------------------------------------------------
+       Globe outline
+       -------------------------------------------------------- */
 
     context.beginPath();
 
@@ -1305,6 +1203,88 @@
 
 
   /* ==========================================================
+     AUTO ROTATION LOOP
+     ========================================================== */
+
+  function animate(
+    timestamp
+  ) {
+
+    if (
+      lastFrameTime === null
+    ) {
+
+      lastFrameTime =
+        timestamp;
+
+    }
+
+
+    /*
+     * Cap delta so returning to the browser tab doesn't
+     * cause the globe to suddenly jump.
+     */
+
+    const delta =
+      Math.min(
+        50,
+        timestamp -
+        lastFrameTime
+      );
+
+
+    lastFrameTime =
+      timestamp;
+
+
+    /*
+     * Slowly rotate only when the visitor isn't actively
+     * interacting with the visualization.
+     */
+
+    if (
+      autoRotate &&
+      !isDragging &&
+      !hoveredCity
+    ) {
+
+      rotation[0] +=
+        AUTO_ROTATE_SPEED *
+        (delta / 1000);
+
+
+      /*
+       * Prevent longitude from growing indefinitely.
+       */
+
+      if (
+        rotation[0] > 360
+      ) {
+
+        rotation[0] -=
+          360;
+
+      }
+
+
+      projection.rotate(
+        rotation
+      );
+
+
+      draw();
+
+    }
+
+
+    animationFrame =
+      requestAnimationFrame(
+        animate
+      );
+  }
+
+
+  /* ==========================================================
      DRAG TO ROTATE
      ========================================================== */
 
@@ -1320,6 +1300,14 @@
       .on(
         "start",
         () => {
+
+          isDragging =
+            true;
+
+
+          autoRotate =
+            false;
+
 
           canvas.style.cursor =
             "grabbing";
@@ -1345,10 +1333,6 @@
             event.dy *
             0.35;
 
-
-          /*
-           * Prevent pole flipping.
-           */
 
           rotation[1] =
             Math.max(
@@ -1386,6 +1370,22 @@
         "end",
         () => {
 
+          isDragging =
+            false;
+
+
+          autoRotate =
+            true;
+
+
+          /*
+           * Reset timing so the globe resumes smoothly.
+           */
+
+          lastFrameTime =
+            null;
+
+
           canvas.style.cursor =
             "grab";
 
@@ -1400,11 +1400,6 @@
   function pointerMoved(
     event
   ) {
-
-    /*
-     * No city lookup is necessary if alumni data
-     * hasn't been loaded yet.
-     */
 
     if (!alumni.length) {
       return;
@@ -1429,15 +1424,8 @@
       null;
 
 
-    /*
-     * Minimum hover target size.
-
-     * Even tiny one-alumnus city nodes remain reasonably
-     * easy to interact with.
-     */
-
     let closestDistance =
-      15;
+      Infinity;
 
 
     for (
@@ -1485,26 +1473,23 @@
 
 
       /*
-       * Larger alumni hubs get a slightly larger
-       * interactive hit area.
+       * Larger visible nodes receive larger hit targets.
        */
 
       const hitRadius =
         Math.max(
-          15,
+          16,
           cityRadiusScale(
             city.count
-          ) + 7
+          ) + 8
         );
 
 
       if (
         distance <
-        closestDistance ||
-        (
-          closest === null &&
-          distance < hitRadius
-        )
+        hitRadius &&
+        distance <
+        closestDistance
       ) {
 
         closest =
@@ -1523,7 +1508,16 @@
       closest;
 
 
+    /*
+     * Pause the ambient rotation while the visitor
+     * is examining a city.
+     */
+
     if (closest) {
+
+      autoRotate =
+        false;
+
 
       showTooltip(
         closest,
@@ -1531,7 +1525,13 @@
         mouseY
       );
 
-    } else {
+    } else if (
+      !isDragging
+    ) {
+
+      autoRotate =
+        true;
+
 
       hideTooltip();
 
@@ -1634,6 +1634,18 @@
 
 
   /* ==========================================================
+     REDUCED MOTION
+     ========================================================== */
+
+  function prefersReducedMotion() {
+
+    return window.matchMedia(
+      "(prefers-reduced-motion: reduce)"
+    ).matches;
+  }
+
+
+  /* ==========================================================
      INITIALIZE
      ========================================================== */
 
@@ -1685,6 +1697,14 @@
             null;
 
 
+          autoRotate =
+            true;
+
+
+          lastFrameTime =
+            null;
+
+
           hideTooltip();
 
 
@@ -1705,6 +1725,24 @@
           passive: true
         }
       );
+
+
+      /* ------------------------------------------------------
+         Ambient rotation
+
+         Respect the visitor's reduced-motion preference.
+         ------------------------------------------------------ */
+
+      if (
+        !prefersReducedMotion()
+      ) {
+
+        animationFrame =
+          requestAnimationFrame(
+            animate
+          );
+
+      }
 
 
     } catch (error) {
