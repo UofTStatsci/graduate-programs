@@ -2,6 +2,7 @@
 <html lang="en">
 
 <head>
+
   <meta charset="utf-8">
 
   <meta
@@ -50,8 +51,10 @@
 
     body {
       margin: 0;
+
       background: var(--black);
       color: var(--white);
+
       font-family: Arial, Helvetica, sans-serif;
     }
 
@@ -112,6 +115,7 @@
 
     .crest {
       padding: 5px;
+
       border: 1px solid currentColor;
     }
 
@@ -131,6 +135,7 @@
 
     .snap {
       height: 100vh;
+
       overflow-y: auto;
 
       scroll-snap-type: y mandatory;
@@ -216,6 +221,11 @@
       z-index: 2;
     }
 
+
+    /* ----------------------------------------------------------
+       Cover logo
+       ---------------------------------------------------------- */
+
     .logo-lockup {
       display: flex;
       align-items: center;
@@ -233,6 +243,11 @@
       font-weight: 800;
     }
 
+
+    /* ----------------------------------------------------------
+       Statistics title
+       ---------------------------------------------------------- */
+
     .cover h1 {
       margin: 0.25em 0 0;
 
@@ -240,6 +255,11 @@
       line-height: 0.8;
       letter-spacing: -0.065em;
     }
+
+
+    /* ----------------------------------------------------------
+       Graduate Programs
+       ---------------------------------------------------------- */
 
     .cover-bottom {
       width: min(560px, 80vw);
@@ -263,12 +283,18 @@
       opacity: 0.6;
     }
 
+
+    /* ----------------------------------------------------------
+       Scroll arrow
+       ---------------------------------------------------------- */
+
     .down {
       position: absolute;
       right: 5vw;
       bottom: 5vh;
 
       color: var(--white);
+
       font-size: 2rem;
       text-decoration: none;
     }
@@ -297,6 +323,7 @@
 
     .cards b {
       color: var(--blue);
+
       font-size: 3rem;
     }
 
@@ -306,6 +333,7 @@
 
     .cards p {
       color: #cfcfcf;
+
       line-height: 1.55;
     }
 
@@ -404,72 +432,138 @@
     }
 
 
-   <!-- ======================================================
-     ALUMNI — INTERACTIVE GLOBE
-     ====================================================== -->
+    /* ==========================================================
+       ALUMNI — INTERACTIVE GLOBE
+       ========================================================== */
 
-<section
-  id="alumni"
-  class="panel globe-panel"
->
+    .globe-panel {
+      display: grid;
 
-  <!-- LEFT COLUMN -->
-  <div class="globe-copy">
+      /*
+       * Desktop:
+       * Copy on left.
+       * Globe on right.
+       */
 
-    <div class="eyebrow">
-      Career &amp; Alumni Network
-    </div>
+      grid-template-columns:
+        minmax(320px, 0.75fr)
+        minmax(0, 1.25fr);
 
-    <h2>
-      From Toronto
-      <br>
-      to the world.
-    </h2>
+      align-items: center;
+      gap: 4vw;
 
-    <p>
-      Our alumni community extends around the globe,
-      connecting U of T Statistical Sciences with cities
-      across Canada and around the world.
-    </p>
+      width: 100%;
+
+      background: var(--globe-bg);
+    }
 
 
-    <div class="globe-stats">
+    /* ----------------------------------------------------------
+       Globe copy — LEFT
+       ---------------------------------------------------------- */
 
-      <div>
-        <strong id="alumni-total">12K+</strong>
-        <span>Alumni</span>
-      </div>
+    .globe-copy {
+      position: relative;
+      z-index: 2;
 
-      <div>
-        <strong id="country-total">47</strong>
-        <span>Countries</span>
-      </div>
+      grid-column: 1;
 
-      <div>
-        <strong id="city-total">212+</strong>
-        <span>Destinations</span>
-      </div>
+      width: 100%;
+      min-width: 0;
+      max-width: 520px;
+    }
 
-    </div>
+    .globe-copy p {
+      max-width: 480px;
 
-  </div>
+      color: rgba(255, 255, 255, 0.78);
+
+      line-height: 1.55;
+    }
 
 
-  <!-- RIGHT COLUMN -->
-  <div
-    id="alumni-globe"
-    class="globe-container"
-    aria-label="Interactive globe showing U of T Statistical Sciences alumni destinations"
-  >
+    /* ----------------------------------------------------------
+       Alumni statistics
+       ---------------------------------------------------------- */
 
-    <canvas
-      id="globe-canvas"
-      aria-hidden="true"
-    ></canvas>
+    .globe-stats {
+      display: grid;
 
-  </div>
+      grid-template-columns:
+        repeat(
+          3,
+          minmax(0, 1fr)
+        );
 
-</section>
+      gap: 1.5rem;
+
+      width: 100%;
+      margin-top: 3rem;
+    }
+
+    .globe-stats div {
+      display: flex;
+      flex-direction: column;
+
+      min-width: 0;
+    }
+
+    .globe-stats strong {
+      color: var(--white);
+
+      font-size: clamp(2rem, 3vw, 4rem);
+      line-height: 1;
+      letter-spacing: -0.04em;
+    }
+
+    .globe-stats span {
+      margin-top: 0.5rem;
+
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+
+      opacity: 0.6;
+    }
+
+
+    /* ----------------------------------------------------------
+       Globe — RIGHT
+       ---------------------------------------------------------- */
+
+    .globe-container {
+      position: relative;
+
+      grid-column: 2;
+
+      width: 100%;
+      height: 80vh;
+      min-width: 0;
+      min-height: 520px;
+
+      align-self: center;
+      justify-self: stretch;
+
+      cursor: grab;
+    }
+
+    .globe-container:active {
+      cursor: grabbing;
+    }
+
+
+    /* ----------------------------------------------------------
+       Globe canvas
+       ---------------------------------------------------------- */
+
+    #globe-canvas {
+      display: block;
+
+      width: 100%;
+      height: 100%;
+
+      touch-action: none;
+    }
 
 
     /* ==========================================================
@@ -590,22 +684,40 @@
 
     @media (max-width: 800px) {
 
+      /* --------------------------------------------------------
+         Navigation
+         -------------------------------------------------------- */
+
       .nav nav {
         display: none;
       }
+
+
+      /* --------------------------------------------------------
+         Panels
+         -------------------------------------------------------- */
 
       .panel {
         padding: 12vh 7vw 7vh;
       }
 
+
+      /* --------------------------------------------------------
+         General single-column layouts
+         -------------------------------------------------------- */
+
       .cards,
       .program,
       .metrics,
-      .globe-panel,
       .research,
       .apply {
         grid-template-columns: 1fr;
       }
+
+
+      /* --------------------------------------------------------
+         Cover
+         -------------------------------------------------------- */
 
       .cover {
         padding: 5vh 5vw;
@@ -614,6 +726,11 @@
       .cover h1 {
         font-size: 20vw;
       }
+
+
+      /* --------------------------------------------------------
+         Programs
+         -------------------------------------------------------- */
 
       .cards {
         margin-top: 4vh;
@@ -627,25 +744,53 @@
         align-content: center;
       }
 
+
+      /* --------------------------------------------------------
+         Metrics
+         -------------------------------------------------------- */
+
       .metric-grid {
         margin-top: 4vh;
       }
 
+
+      /* --------------------------------------------------------
+         Alumni globe
+
+         Only mobile switches to one column.
+         -------------------------------------------------------- */
+
       .globe-panel {
+        grid-template-columns: 1fr;
+
         align-content: center;
+
         gap: 1rem;
+      }
+
+      .globe-copy {
+        grid-column: 1;
+
+        max-width: none;
       }
 
       .globe-copy h2 {
         font-size: 3.3rem;
       }
 
-      .globe-copy > p:not(.globe-instruction) {
+      .globe-copy > p {
         display: none;
       }
 
       .globe-stats {
-        gap: 1.5rem;
+        grid-template-columns:
+          repeat(
+            3,
+            minmax(0, 1fr)
+          );
+
+        gap: 1rem;
+
         margin-top: 1.5rem;
       }
 
@@ -653,18 +798,27 @@
         font-size: clamp(1.8rem, 8vw, 3rem);
       }
 
-      .globe-instruction {
-        margin-top: 1.5rem;
+      .globe-container {
+        grid-column: 1;
+
+        width: 100%;
+        height: 46vh;
+        min-height: 310px;
       }
 
-      .globe-container {
-        height: 52vh;
-        min-height: 350px;
-      }
+
+      /* --------------------------------------------------------
+         Research
+         -------------------------------------------------------- */
 
       .columns {
         grid-template-columns: 1fr 1fr;
       }
+
+
+      /* --------------------------------------------------------
+         Footer
+         -------------------------------------------------------- */
 
       .footer {
         flex-direction: column;
@@ -673,6 +827,11 @@
 
         gap: 3rem;
       }
+
+
+      /* --------------------------------------------------------
+         Scroll snapping
+         -------------------------------------------------------- */
 
       .snap {
         scroll-snap-type: y proximity;
@@ -687,10 +846,7 @@
     @media (max-width: 520px) {
 
       .globe-stats {
-        justify-content: space-between;
-
-        width: 100%;
-        gap: 0.75rem;
+        gap: 0.6rem;
       }
 
       .globe-stats strong {
@@ -698,12 +854,12 @@
       }
 
       .globe-stats span {
-        font-size: 0.62rem;
+        font-size: 0.6rem;
       }
 
       .globe-container {
-        height: 46vh;
-        min-height: 310px;
+        height: 43vh;
+        min-height: 290px;
       }
 
       .columns {
@@ -725,13 +881,10 @@
       .snap {
         scroll-snap-type: none;
       }
-
-      .globe-tooltip {
-        transition: none;
-      }
     }
 
   </style>
+
 </head>
 
 
@@ -760,6 +913,7 @@
       class="wordmark"
       href="#cover"
     >
+
       <span class="crest">
         U of T
       </span>
@@ -767,6 +921,7 @@
       <span>
         Statistical Sciences
       </span>
+
     </a>
 
 
@@ -893,6 +1048,7 @@
 
       <div class="cards">
 
+
         <article>
 
           <b>MSc</b>
@@ -954,6 +1110,7 @@
 
         </article>
 
+
       </div>
 
     </section>
@@ -1001,6 +1158,7 @@
           </dd>
         </div>
 
+
         <div>
           <dt>Structure</dt>
 
@@ -1008,6 +1166,7 @@
             Coursework · 4.0 FCEs total
           </dd>
         </div>
+
 
         <div>
           <dt>Career focus</dt>
@@ -1017,6 +1176,7 @@
             PhD study
           </dd>
         </div>
+
 
         <div>
           <dt>Funding</dt>
@@ -1073,6 +1233,7 @@
           </dd>
         </div>
 
+
         <div>
           <dt>Structure</dt>
 
@@ -1080,6 +1241,7 @@
             Coursework + applied capstone project
           </dd>
         </div>
+
 
         <div>
           <dt>Career focus</dt>
@@ -1089,6 +1251,7 @@
             quantitative finance
           </dd>
         </div>
+
 
         <div>
           <dt>Funding</dt>
@@ -1145,6 +1308,7 @@
           </dd>
         </div>
 
+
         <div>
           <dt>Structure</dt>
 
@@ -1153,6 +1317,7 @@
           </dd>
         </div>
 
+
         <div>
           <dt>Supervision</dt>
 
@@ -1160,6 +1325,7 @@
             Supervisor assigned
           </dd>
         </div>
+
 
         <div>
           <dt>Funding</dt>
@@ -1201,32 +1367,57 @@
       <div class="metric-grid">
 
         <div>
-          <strong>12K</strong>
-          <span>Worldwide alumni</span>
+
+          <strong>
+            12K
+          </strong>
+
+          <span>
+            Worldwide alumni
+          </span>
+
         </div>
 
-        <div>
-          <strong>47</strong>
-          <span>Countries</span>
-        </div>
 
         <div>
-          <strong>35%</strong>
+
+          <strong>
+            47
+          </strong>
+
+          <span>
+            Countries
+          </span>
+
+        </div>
+
+
+        <div>
+
+          <strong>
+            35%
+          </strong>
 
           <span>
             Projected employment growth for statisticians
             and data scientists, 2022–32*
           </span>
+
         </div>
 
+
         <div>
-          <strong>Top-ranked</strong>
+
+          <strong>
+            Top-ranked
+          </strong>
 
           <span>
             A globally recognized department with breadth
             across probability, machine learning, actuarial
             science, biostatistics and finance.
           </span>
+
         </div>
 
       </div>
@@ -1244,71 +1435,101 @@
          ALUMNI — INTERACTIVE GLOBE
          ====================================================== -->
 
-  <section
-  id="alumni"
-  class="panel globe-panel"
->
-
-  <div class="globe-copy">
-
-    <div class="eyebrow">
-      Career &amp; Alumni Network
-    </div>
-
-    <h2>
-      From Toronto
-      <br>
-      to the world.
-    </h2>
-
-    <p>
-      Our alumni community extends around the globe,
-      connecting U of T Statistical Sciences with cities
-      across Canada and around the world.
-    </p>
-
-    <div class="globe-stats">
-
-  <div class="globe-stats">
-
-  <div>
-    <strong id="alumni-total">12K+</strong>
-    <span>Alumni</span>
-  </div>
-
-  <div>
-    <strong id="country-total">47</strong>
-    <span>Countries</span>
-  </div>
-
-  <div>
-    <strong id="city-total">212+</strong>
-    <span>Destinations</span>
-  </div>
-
-</div>
+    <section
+      id="alumni"
+      class="panel globe-panel"
+    >
 
 
-  <div
-    id="alumni-globe"
-    class="globe-container"
-    aria-label="Interactive globe showing cities where U of T Statistical Sciences alumni are located"
-  >
+      <!-- LEFT COLUMN -->
 
-    <canvas
-      id="globe-canvas"
-      aria-hidden="true"
-    ></canvas>
+      <div class="globe-copy">
 
-    <div
-      id="globe-tooltip"
-      class="globe-tooltip"
-      aria-hidden="true"
-    ></div>
+        <div class="eyebrow">
+          Career &amp; Alumni Network
+        </div>
 
-  </div>
 
-</section>
+        <h2>
+          From Toronto
+          <br>
+          to the world.
+        </h2>
+
+
+        <p>
+          Our alumni community extends around the globe,
+          connecting U of T Statistical Sciences with
+          destinations across Canada and around the world.
+        </p>
+
+
+        <div class="globe-stats">
+
+
+          <div>
+
+            <strong id="alumni-total">
+              12K+
+            </strong>
+
+            <span>
+              Alumni
+            </span>
+
+          </div>
+
+
+          <div>
+
+            <strong id="country-total">
+              47
+            </strong>
+
+            <span>
+              Countries
+            </span>
+
+          </div>
+
+
+          <div>
+
+            <strong id="city-total">
+              212+
+            </strong>
+
+            <span>
+              Destinations
+            </span>
+
+          </div>
+
+
+        </div>
+
+      </div>
+
+
+      <!-- RIGHT COLUMN -->
+
+      <div
+        id="alumni-globe"
+        class="globe-container"
+        aria-label="Interactive globe showing U of T Statistical Sciences alumni destinations"
+      >
+
+        <canvas
+          id="globe-canvas"
+          aria-hidden="true"
+        ></canvas>
+
+      </div>
+
+
+    </section>
+
+
     <!-- ======================================================
          RESEARCH
          ====================================================== -->
@@ -1498,8 +1719,10 @@
 
         <br>
         University of Toronto
+
         <br>
         700 University Ave, 9th Floor
+
         <br>
         Toronto, Ontario, M5G 1Z5
 
@@ -1545,7 +1768,7 @@
   <script src="assets/js/collision.js?v=4"></script>
 
   <!-- Interactive alumni globe -->
-<script src="assets/js/alumni-globe.js?v=7"></script>
+  <script src="assets/js/alumni-globe.js?v=7"></script>
 
   <!-- General site interactions -->
   <script src="assets/js/main.js"></script>
