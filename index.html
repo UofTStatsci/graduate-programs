@@ -404,123 +404,72 @@
     }
 
 
-    /* ==========================================================
-       ALUMNI — INTERACTIVE GLOBE
-       ========================================================== */
+   <!-- ======================================================
+     ALUMNI — INTERACTIVE GLOBE
+     ====================================================== -->
 
-    .globe-panel {
-      display: grid;
-      grid-template-columns: 0.65fr 1.35fr;
-      align-items: center;
-      gap: 3vw;
+<section
+  id="alumni"
+  class="panel globe-panel"
+>
 
-      background: var(--globe-bg);
-    }
+  <!-- LEFT COLUMN -->
+  <div class="globe-copy">
 
-    .globe-copy {
-      position: relative;
-      z-index: 2;
-    }
+    <div class="eyebrow">
+      Career &amp; Alumni Network
+    </div>
 
-    .globe-copy p {
-      max-width: 480px;
+    <h2>
+      From Toronto
+      <br>
+      to the world.
+    </h2>
 
-      color: rgba(255, 255, 255, 0.78);
-      line-height: 1.55;
-    }
+    <p>
+      Our alumni community extends around the globe,
+      connecting U of T Statistical Sciences with cities
+      across Canada and around the world.
+    </p>
 
-    .globe-stats {
-      display: flex;
-      gap: 2.5rem;
 
-      margin-top: 3rem;
-    }
+    <div class="globe-stats">
 
-    .globe-stats div {
-      display: flex;
-      flex-direction: column;
-    }
+      <div>
+        <strong id="alumni-total">12K+</strong>
+        <span>Alumni</span>
+      </div>
 
-    .globe-stats strong {
-      color: var(--white);
+      <div>
+        <strong id="country-total">47</strong>
+        <span>Countries</span>
+      </div>
 
-      font-size: clamp(2rem, 3vw, 4rem);
-      line-height: 1;
-      letter-spacing: -0.04em;
-    }
+      <div>
+        <strong id="city-total">212+</strong>
+        <span>Destinations</span>
+      </div>
 
-    .globe-stats span {
-      margin-top: 0.5rem;
+    </div>
 
-      font-size: 0.72rem;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
+  </div>
 
-      opacity: 0.6;
-    }
 
-    .globe-instruction {
-      margin-top: 3rem;
+  <!-- RIGHT COLUMN -->
+  <div
+    id="alumni-globe"
+    class="globe-container"
+    aria-label="Interactive globe showing U of T Statistical Sciences alumni destinations"
+  >
 
-      font-size: 0.75rem;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
+    <canvas
+      id="globe-canvas"
+      aria-hidden="true"
+    ></canvas>
 
-      opacity: 0.5;
-    }
+  </div>
 
-    .globe-container {
-      position: relative;
-
-      width: 100%;
-      height: 82vh;
-      min-height: 520px;
-
-      cursor: grab;
-    }
-
-    .globe-container:active {
-      cursor: grabbing;
-    }
-
-    #globe-canvas {
-      display: block;
-
-      width: 100%;
-      height: 100%;
-
-      touch-action: none;
-    }
-
-    .globe-tooltip {
-      position: absolute;
-      z-index: 10;
-
-      padding: 9px 12px;
-
-      pointer-events: none;
-
-      background: var(--white);
-      color: var(--globe-bg);
-
-      font-size: 0.78rem;
-      line-height: 1.4;
-
-      opacity: 0;
-
-      transform: translate(12px, -50%);
-      transition: opacity 120ms ease;
-    }
-
-    .globe-tooltip strong {
-      display: block;
-
-      font-size: 0.85rem;
-    }
-
-    .globe-tooltip span {
-      opacity: 0.65;
-    }
+</section>
 
 
     /* ==========================================================
